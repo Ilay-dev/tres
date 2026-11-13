@@ -133,8 +133,7 @@ export function HomeScreen({
               <li>Bei 2 Spielern wirkt Richtungswechsel wie Aussetzen.</li>
               <li>2 identische Karten derselben Farbe &amp; Zahl können gleichzeitig gelegt werden.</li>
               <li>Optional in der Lobby: Modus „Einwerfen“ (identische Karte jederzeit legen).</li>
-              <li>Farbwahl +4 darf legal ohne passende Farbe gelegt oder geblufft &amp; angezweifelt werden.</li>
-              <li>Bei der vorletzten Karte „UNO!“ rufen — sonst drohen +2 Strafkarten beim Erwischt-Werden.</li>
+              <li>Farbwahl +4 lässt den nächsten Spieler sofort 4 Karten ziehen und aussetzen.</li>
             </ul>
           </div>
         )}

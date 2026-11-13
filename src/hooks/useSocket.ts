@@ -530,24 +530,6 @@ export function useUnoSocket() {
     void dispatchAction('game:keep_drawn_card');
   }, [dispatchAction]);
 
-  const resolveChallenge = useCallback(
-    (challenge: boolean) => {
-      void dispatchAction('game:resolve_challenge', { challenge });
-    },
-    [dispatchAction]
-  );
-
-  const callUno = useCallback(() => {
-    void dispatchAction('game:call_uno');
-  }, [dispatchAction]);
-
-  const catchUno = useCallback(
-    (targetPlayerId: string) => {
-      void dispatchAction('game:catch_uno', { targetPlayerId });
-    },
-    [dispatchAction]
-  );
-
   return {
     connected,
     roomState,
@@ -567,8 +549,5 @@ export function useUnoSocket() {
     playCards,
     drawCard,
     keepDrawnCard,
-    resolveChallenge,
-    callUno,
-    catchUno,
   };
 }

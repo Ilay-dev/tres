@@ -12,17 +12,13 @@ import {
   CARD_COLORS,
   type InternalGameState,
   type InternalPlayer,
-  callUno,
-  catchUno,
   chooseInitialColor,
   drawCardAction,
   isCardPlayable,
   keepDrawnCard,
   nextPlayerIndex,
-  playCard,
   playCards,
   pushEvent,
-  resolveWild4Challenge,
   startRound,
 } from '../shared/gameEngine.js';
 
@@ -182,8 +178,6 @@ export class RoomManager {
       disconnectedAt: p.disconnectedAt,
       cardCount: p.hand.length,
       score: p.score,
-      unoCalled: p.unoCalled,
-      unoVulnerable: p.unoVulnerable,
     }));
 
     const currentPlayer =
@@ -212,15 +206,6 @@ export class RoomManager {
       drawnDecisionPlayerId: game?.drawnDecisionPlayerId ?? null,
       drawnPlayableCardId:
         game && game.drawnDecisionPlayerId === playerId ? game.drawnPlayableCardId : null,
-      pendingChallenge: game?.pendingChallenge
-        ? {
-            offenderId: game.pendingChallenge.offenderId,
-            offenderName: game.pendingChallenge.offenderName,
-            targetId: game.pendingChallenge.targetId,
-            targetName: game.pendingChallenge.targetName,
-            chosenColor: game.pendingChallenge.chosenColor,
-          }
-        : null,
       lastEvent: game?.eventLog[0] ?? null,
       eventLog: game?.eventLog ?? [],
       roundSummary: game?.roundSummary ?? null,
@@ -246,8 +231,6 @@ export class RoomManager {
       socketId,
       hand: [],
       score: 0,
-      unoCalled: false,
-      unoVulnerable: false,
     };
 
     const room: Room = {
@@ -306,8 +289,6 @@ export class RoomManager {
       socketId,
       hand: [],
       score: 0,
-      unoCalled: false,
-      unoVulnerable: false,
     };
 
     room.players.push(player);
@@ -471,14 +452,6 @@ export class RoomManager {
       return;
     }
 
-    if (game.pendingChallenge) {
-      if (
-        game.pendingChallenge.targetId === removed.id ||
-        game.pendingChallenge.offenderId === removed.id
-      ) {
-        game.pendingChallenge = null;
-      }
-    }
     if (game.drawnDecisionPlayerId === removed.id) {
       game.drawnDecisionPlayerId = null;
       game.drawnPlayableCardId = null;
@@ -563,8 +536,6 @@ export class RoomManager {
       socketId: null,
       hand: [],
       score: 0,
-      unoCalled: false,
-      unoVulnerable: false,
     };
 
     room.players.push(bot);
@@ -615,24 +586,19 @@ export class RoomManager {
       return { ok: false, error: 'Dieser Spieler ist gerade nicht am Zug.' };
     }
 
-    // Resolve any pending state safely and advance turn
     if (game.pendingInitialColorChoice) {
       game.pendingInitialColorChoice = false;
       game.activeColor = 'red';
     }
-    if (game.pendingChallenge && game.pendingChallenge.targetId === target.id) {
-      resolveWild4Challenge(game, room.players, target.id, false);
-    } else {
-      game.drawnDecisionPlayerId = null;
-      game.drawnPlayableCardId = null;
-      game.currentPlayerIndex = nextPlayerIndex(
-        game.currentPlayerIndex,
-        game.direction,
-        room.players.length,
-        1
-      );
-      pushEvent(game, `${target.name} ist getrennt — Zug übersprungen.`);
-    }
+    game.drawnDecisionPlayerId = null;
+    game.drawnPlayableCardId = null;
+    game.currentPlayerIndex = nextPlayerIndex(
+      game.currentPlayerIndex,
+      game.direction,
+      room.players.length,
+      1
+    );
+    pushEvent(game, `${target.name} ist getrennt — Zug übersprungen.`);
 
     this.onBroadcast(room);
     this.scheduleBotTurnIfNeeded(room);
@@ -657,8 +623,6 @@ export class RoomManager {
     room.game = null;
     for (const p of room.players) {
       p.hand = [];
-      p.unoCalled = false;
-      p.unoVulnerable = false;
       p.isReady = p.isBot;
     }
     this.onBroadcast(room);
@@ -795,52 +759,6 @@ export class RoomManager {
     return res;
   }
 
-  public handleResolveChallenge(socketId: string, challenge: boolean): RoomActionResponse {
-    const session = this.getSession(socketId);
-    if (!session) return { ok: false, error: 'Nicht in einem Room.' };
-    const { room, player } = session;
-    if (room.phase !== 'playing' || !room.game) {
-      return { ok: false, error: 'Keine aktive Runde.' };
-    }
-    const res = resolveWild4Challenge(room.game, room.players, player.id, challenge);
-    if (!res.ok) return res;
-
-    room.lastActivityAt = Date.now();
-    this.onBroadcast(room);
-    this.scheduleBotTurnIfNeeded(room);
-    return res;
-  }
-
-  public handleCallUno(socketId: string): RoomActionResponse {
-    const session = this.getSession(socketId);
-    if (!session) return { ok: false, error: 'Nicht in einem Room.' };
-    const { room, player } = session;
-    if (room.phase !== 'playing' || !room.game) {
-      return { ok: false, error: 'Keine aktive Runde.' };
-    }
-    const res = callUno(room.game, room.players, player.id, { gameMode: room.gameMode });
-    if (!res.ok) return res;
-
-    room.lastActivityAt = Date.now();
-    this.onBroadcast(room);
-    return res;
-  }
-
-  public handleCatchUno(socketId: string, targetPlayerId: string): RoomActionResponse {
-    const session = this.getSession(socketId);
-    if (!session) return { ok: false, error: 'Nicht in einem Room.' };
-    const { room, player } = session;
-    if (room.phase !== 'playing' || !room.game) {
-      return { ok: false, error: 'Keine aktive Runde.' };
-    }
-    const res = catchUno(room.game, room.players, player.id, targetPlayerId);
-    if (!res.ok) return res;
-
-    room.lastActivityAt = Date.now();
-    this.onBroadcast(room);
-    return res;
-  }
-
   private finishRound(room: Room): void {
     this.clearBotTimer(room);
     room.phase = 'round_over';
@@ -894,26 +812,14 @@ export class RoomManager {
       return;
     }
 
-    // 2. Wild+4 Challenge decision
-    if (game.pendingChallenge && game.pendingChallenge.targetId === bot.id) {
-      const offender = room.players.find((p) => p.id === game.pendingChallenge?.offenderId);
-      const shouldChallenge = offender ? offender.hand.length <= 3 || randomInt(0, 100) < 25 : false;
-      resolveWild4Challenge(game, room.players, bot.id, shouldChallenge);
-      this.onBroadcast(room);
-      this.scheduleBotTurnIfNeeded(room);
-      return;
-    }
-
-    // 3. Play drawn card if playable
     if (game.drawnDecisionPlayerId === bot.id && game.drawnPlayableCardId) {
       const drawnCard = bot.hand.find((c) => c.id === game.drawnPlayableCardId);
       if (drawnCard) {
-        if (bot.hand.length === 2) {
-          callUno(game, room.players, bot.id);
-        }
         const chosenColor =
           drawnCard.color === 'wild' ? this.pickBestColorForBot(bot) : undefined;
-        const res = playCard(game, room.players, bot.id, drawnCard.id, chosenColor);
+        const res = playCards(game, room.players, bot.id, [drawnCard.id], chosenColor, {
+          gameMode: room.gameMode,
+        });
         if (res.roundEnded) {
           this.finishRound(room);
           return;
@@ -947,11 +853,6 @@ export class RoomManager {
           : undefined;
 
       const cardIds = twin ? [chosen.id, twin.id] : [chosen.id];
-
-      // Bot calls UNO most of the time when dropping to 1 card
-      if (bot.hand.length - cardIds.length === 1 && randomInt(0, 100) < 85) {
-        callUno(game, room.players, bot.id, { gameMode: room.gameMode });
-      }
 
       const chosenColor = chosen.color === 'wild' ? this.pickBestColorForBot(bot) : undefined;
       const res = playCards(game, room.players, bot.id, cardIds, chosenColor, {

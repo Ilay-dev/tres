@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { UnoCard } from '../../shared/types.js';
 import {
-  callUno,
-  catchUno,
   chooseInitialColor,
   createStandardDeck,
   drawCardAction,
   keepDrawnCard,
   playCard,
   playCards,
-  resolveWild4Challenge,
   startRound,
   type InternalGameState,
   type InternalPlayer,
@@ -178,94 +175,27 @@ describe('Official Standard UNO Rules Engine', () => {
     expect(players[0].hand).toHaveLength(2);
   });
 
-  it('supports official Wild+4 challenge: catches bluff (offender draws 4) vs innocent (challenger draws 6)', () => {
-    // Case A: Bluff caught (p1 holds a red card while activeColor is red)
-    const playersA = makePlayers(2);
-    playersA[0].hand = [
+  it('Wild+4 chooses color, immediately makes next player draw 4 cards, and skips them', () => {
+    const players = makePlayers(3);
+    players[0].hand = [
       { id: 'w4', color: 'wild', value: 'wild4' },
       { id: 'r-5', color: 'red', value: '5' },
     ];
-    playersA[1].hand = [{ id: 'g-3', color: 'green', value: '3' }];
-    const gameA = makeControlledGame(playersA, { id: 'r-1', color: 'red', value: '1' }, [
+    players[1].hand = [{ id: 'g-3', color: 'green', value: '3' }];
+    players[2].hand = [{ id: 'b-7', color: 'blue', value: '7' }];
+
+    const game = makeControlledGame(players, { id: 'r-1', color: 'red', value: '1' }, [
       { id: 'x1', color: 'blue', value: '1' },
       { id: 'x2', color: 'blue', value: '2' },
       { id: 'x3', color: 'blue', value: '3' },
       { id: 'x4', color: 'blue', value: '4' },
     ]);
 
-    playCard(gameA, playersA, 'p1', 'w4', 'blue');
-    expect(gameA.pendingChallenge?.wasBluff).toBe(true);
-    expect(gameA.currentPlayerIndex).toBe(1);
-
-    resolveWild4Challenge(gameA, playersA, 'p2', true);
-    expect(playersA[0].hand).toHaveLength(5); // 1 remaining + 4 penalty
-    expect(playersA[1].hand).toHaveLength(1);
-    expect(gameA.currentPlayerIndex).toBe(1); // challenger keeps turn!
-
-    // Case B: Legitimate +4 challenged -> challenger draws 6 and loses turn
-    const playersB = makePlayers(2);
-    playersB[0].hand = [
-      { id: 'w4', color: 'wild', value: 'wild4' },
-      { id: 'g-5', color: 'green', value: '5' },
-    ];
-    playersB[1].hand = [{ id: 'g-3', color: 'green', value: '3' }];
-    const gameB = makeControlledGame(playersB, { id: 'r-1', color: 'red', value: '1' }, [
-      { id: 'y1', color: 'yellow', value: '1' },
-      { id: 'y2', color: 'yellow', value: '2' },
-      { id: 'y3', color: 'yellow', value: '3' },
-      { id: 'y4', color: 'yellow', value: '4' },
-      { id: 'y5', color: 'yellow', value: '5' },
-      { id: 'y6', color: 'yellow', value: '6' },
-    ]);
-
-    playCard(gameB, playersB, 'p1', 'w4', 'green');
-    expect(gameB.pendingChallenge?.wasBluff).toBe(false);
-    resolveWild4Challenge(gameB, playersB, 'p2', true);
-    expect(playersB[1].hand).toHaveLength(7); // 1 + 6 penalty
-    expect(gameB.currentPlayerIndex).toBe(0); // p2 lost turn, back to p1
-  });
-
-  it('enforces UNO call and Catch (+2 penalty) properly', () => {
-    const players = makePlayers(2);
-    players[0].hand = [
-      { id: 'r-2', color: 'red', value: '2' },
-      { id: 'b-9', color: 'blue', value: '9' },
-    ];
-    players[1].hand = [{ id: 'g-3', color: 'green', value: '3' }];
-
-    const game = makeControlledGame(
-      players,
-      { id: 'r-1', color: 'red', value: '1' },
-      [
-        { id: 'y1', color: 'yellow', value: '4' },
-        { id: 'y2', color: 'yellow', value: '5' },
-      ]
-    );
-
-    // p1 plays without calling UNO
-    playCard(game, players, 'p1', 'r-2');
-    expect(players[0].hand).toHaveLength(1);
-    expect(players[0].unoVulnerable).toBe(true);
-
-    // p2 catches p1 before p1 calls UNO!
-    const catchRes = catchUno(game, players, 'p2', 'p1');
-    expect(catchRes.ok).toBe(true);
-    expect(players[0].hand).toHaveLength(3);
-    expect(players[0].unoVulnerable).toBe(false);
-
-    // If p1 calls UNO first before playing, p1 is safe
-    players[0].hand = [
-      { id: 'r-3', color: 'red', value: '3' },
-      { id: 'b-4', color: 'blue', value: '4' },
-    ];
-    game.currentPlayerIndex = 0;
-    game.discardPile.push({ id: 'r-8', color: 'red', value: '8' });
-    const unoRes = callUno(game, players, 'p1');
-    expect(unoRes.ok).toBe(true);
-    playCard(game, players, 'p1', 'r-3');
-    expect(players[0].unoVulnerable).toBe(false);
-    const lateCatch = catchUno(game, players, 'p2', 'p1');
-    expect(lateCatch.ok).toBe(false);
+    const res = playCard(game, players, 'p1', 'w4', 'blue');
+    expect(res.ok).toBe(true);
+    expect(game.activeColor).toBe('blue');
+    expect(players[1].hand).toHaveLength(5); // 1 + 4 drawn immediately
+    expect(game.currentPlayerIndex).toBe(2); // p2 skipped, turn goes to p3
   });
 
   it('recycles discard pile when draw pile runs out and scores round accurately', () => {
@@ -316,15 +246,10 @@ describe('Official Standard UNO Rules Engine', () => {
     expect(badPair.ok).toBe(false);
     expect(players[0].hand).toHaveLength(3);
 
-    // Pre-calling UNO before dropping from 3 -> 1 with a playable pair works
-    const preUno = callUno(game, players, 'p1');
-    expect(preUno.ok).toBe(true);
-
     // Identical pair (red 7 + red 7) succeeds
     const goodPair = playCards(game, players, 'p1', ['r-7-1', 'r-7-2']);
     expect(goodPair.ok).toBe(true);
     expect(players[0].hand).toHaveLength(1);
-    expect(players[0].unoVulnerable).toBe(false);
     expect(game.discardPile.slice(-2).map((c) => c.id)).toEqual(['r-7-1', 'r-7-2']);
     expect(game.currentPlayerIndex).toBe(1);
   });

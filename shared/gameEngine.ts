@@ -30,18 +30,6 @@ export interface InternalPlayer {
   socketId: string | null;
   hand: UnoCard[];
   score: number;
-  unoCalled: boolean;
-  unoVulnerable: boolean;
-}
-
-export interface InternalChallenge {
-  offenderId: string;
-  offenderName: string;
-  targetId: string;
-  targetName: string;
-  previousColor: CardColor;
-  chosenColor: CardColor;
-  wasBluff: boolean;
 }
 
 export interface InternalGameState {
@@ -54,7 +42,6 @@ export interface InternalGameState {
   pendingInitialColorChoice: boolean;
   drawnDecisionPlayerId: string | null;
   drawnPlayableCardId: string | null;
-  pendingChallenge: InternalChallenge | null;
   roundSummary: RoundSummary | null;
   eventLog: GameEvent[];
 }
@@ -231,22 +218,7 @@ function giveCardsToPlayer(
 ): UnoCard[] {
   const drawn = drawFromPile(game, count);
   player.hand.push(...drawn);
-  if (player.hand.length !== 1) {
-    player.unoCalled = false;
-    player.unoVulnerable = false;
-  }
   return drawn;
-}
-
-function clearUnoVulnerabilitiesExcept(
-  players: InternalPlayer[],
-  exemptPlayerId?: string
-): void {
-  for (const p of players) {
-    if (p.id !== exemptPlayerId) {
-      p.unoVulnerable = false;
-    }
-  }
 }
 
 export function startRound(
@@ -261,8 +233,6 @@ export function startRound(
 
   for (const player of players) {
     player.hand = [];
-    player.unoCalled = false;
-    player.unoVulnerable = false;
     for (let i = 0; i < 7; i++) {
       const card = deck.pop();
       if (card) player.hand.push(card);
@@ -286,7 +256,6 @@ export function startRound(
     pendingInitialColorChoice: false,
     drawnDecisionPlayerId: null,
     drawnPlayableCardId: null,
-    pendingChallenge: null,
     roundSummary: null,
     eventLog: [],
   };
@@ -376,7 +345,6 @@ function finalizeRoundWin(
   };
   game.drawnDecisionPlayerId = null;
   game.drawnPlayableCardId = null;
-  game.pendingChallenge = null;
   game.pendingInitialColorChoice = false;
   pushEvent(game, `${winner.name} gewinnt Runde ${game.roundNumber} (+${pointsEarned} Punkte)!`);
 }
@@ -431,9 +399,6 @@ export function playCards(
   }
   if (game.pendingInitialColorChoice) {
     return { ok: false, error: 'Zuerst muss die Startfarbe gewählt werden.' };
-  }
-  if (game.pendingChallenge) {
-    return { ok: false, error: 'Zuerst muss das +4 geklärt werden.' };
   }
   if (cardIds.length < 1 || cardIds.length > 2) {
     return { ok: false, error: 'Du kannst 1 oder 2 identische Karten legen.' };
@@ -524,26 +489,10 @@ export function playCards(
     return { ok: false, error: 'Bitte wähle eine Farbe aus.' };
   }
 
-  clearUnoVulnerabilitiesExcept(players, actingPlayer.id);
-
-  const previousActiveColor = game.activeColor;
-  const wasBluff =
-    primaryCard.value === 'wild4' &&
-    actingPlayer.hand.some((c) => c.id !== primaryCard.id && c.color === previousActiveColor);
-
   actingPlayer.hand = actingPlayer.hand.filter((c) => !uniqueIds.has(c.id));
   game.discardPile.push(...selectedCards);
   game.drawnDecisionPlayerId = null;
   game.drawnPlayableCardId = null;
-
-  if (actingPlayer.hand.length === 1) {
-    if (!actingPlayer.unoCalled) {
-      actingPlayer.unoVulnerable = true;
-    }
-  } else {
-    actingPlayer.unoCalled = false;
-    actingPlayer.unoVulnerable = false;
-  }
 
   if (actingPlayer.hand.length === 0) {
     if (primaryCard.color !== 'wild') {
@@ -587,21 +536,13 @@ export function playCards(
     );
   } else if (primaryCard.value === 'wild4') {
     game.activeColor = chosenColor!;
-    const targetIdx = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
-    const target = players[targetIdx];
-    game.currentPlayerIndex = targetIdx;
-    game.pendingChallenge = {
-      offenderId: actingPlayer.id,
-      offenderName: actingPlayer.name,
-      targetId: target.id,
-      targetName: target.name,
-      previousColor: previousActiveColor,
-      chosenColor: game.activeColor,
-      wasBluff,
-    };
+    const victimIdx = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
+    const victim = players[victimIdx];
+    giveCardsToPlayer(game, victim, 4);
+    game.currentPlayerIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 2);
     pushEvent(
       game,
-      `${actingPlayer.name} spielt +4 (Farbe: ${COLOR_LABELS_DE[game.activeColor]}) auf ${target.name}.`,
+      `${actingPlayer.name} spielt +4 (Farbe: ${COLOR_LABELS_DE[game.activeColor]}) — ${victim.name} zieht 4 Karten und setzt aus.`,
       game.activeColor
     );
   } else if (primaryCard.value === 'skip') {
@@ -710,9 +651,6 @@ export function drawCardAction(
   if (game.pendingInitialColorChoice) {
     return { ok: false, error: 'Zuerst muss die Startfarbe gewählt werden.' };
   }
-  if (game.pendingChallenge) {
-    return { ok: false, error: 'Zuerst muss das +4 geklärt werden.' };
-  }
   if (game.drawnDecisionPlayerId) {
     return { ok: false, error: 'Du hast bereits eine Karte gezogen.' };
   }
@@ -721,8 +659,6 @@ export function drawCardAction(
   if (!currentPlayer || currentPlayer.id !== playerId) {
     return { ok: false, error: 'Du bist nicht am Zug.' };
   }
-
-  clearUnoVulnerabilitiesExcept(players);
 
   const drawn = giveCardsToPlayer(game, currentPlayer, 1);
   if (drawn.length === 0) {
@@ -774,143 +710,6 @@ export function keepDrawnCard(
     1
   );
   pushEvent(game, `${currentPlayer.name} behält die gezogene Karte.`);
-  return { ok: true };
-}
-
-export function resolveWild4Challenge(
-  game: InternalGameState,
-  players: InternalPlayer[],
-  playerId: string,
-  challenge: boolean
-): EngineActionResult {
-  const pending = game.pendingChallenge;
-  if (!pending) {
-    return { ok: false, error: 'Kein offenes +4 zum Anzweifeln.' };
-  }
-  if (pending.targetId !== playerId) {
-    return { ok: false, error: 'Nur der betroffene Spieler darf entscheiden.' };
-  }
-
-  const targetIdx = players.findIndex((p) => p.id === pending.targetId);
-  const offender = players.find((p) => p.id === pending.offenderId);
-  const target = players[targetIdx];
-  game.pendingChallenge = null;
-
-  if (!target || !offender) {
-    return { ok: false, error: 'Spieler nicht gefunden.' };
-  }
-
-  if (!challenge) {
-    giveCardsToPlayer(game, target, 4);
-    game.currentPlayerIndex = nextPlayerIndex(targetIdx, game.direction, players.length, 1);
-    pushEvent(game, `${target.name} akzeptiert und zieht 4 Karten.`, game.activeColor);
-    return { ok: true };
-  }
-
-  if (pending.wasBluff) {
-    giveCardsToPlayer(game, offender, 4);
-    game.currentPlayerIndex = targetIdx;
-    pushEvent(
-      game,
-      `Bluff aufgedeckt! ${offender.name} hatte ${COLOR_LABELS_DE[pending.previousColor]} und zieht 4 Karten.`,
-      game.activeColor
-    );
-  } else {
-    giveCardsToPlayer(game, target, 6);
-    game.currentPlayerIndex = nextPlayerIndex(targetIdx, game.direction, players.length, 1);
-    pushEvent(
-      game,
-      `Anzweifeln fehlgeschlagen! ${target.name} zieht 6 Karten.`,
-      game.activeColor
-    );
-  }
-
-  return { ok: true };
-}
-
-function hasPlayablePair(
-  hand: readonly UnoCard[],
-  topCard: UnoCard,
-  activeColor: CardColor
-): boolean {
-  const counts = new Map<string, UnoCard>();
-  for (const card of hand) {
-    if (card.color === 'wild') continue;
-    const key = `${card.color}-${card.value}`;
-    if (counts.has(key) && isCardPlayable(card, topCard, activeColor)) {
-      return true;
-    }
-    counts.set(key, card);
-  }
-  return false;
-}
-
-export function callUno(
-  game: InternalGameState,
-  players: InternalPlayer[],
-  playerId: string,
-  options?: { gameMode?: GameMode }
-): EngineActionResult {
-  if (game.roundSummary) {
-    return { ok: false, error: 'Runde bereits beendet.' };
-  }
-  const player = players.find((p) => p.id === playerId);
-  if (!player) {
-    return { ok: false, error: 'Spieler nicht gefunden.' };
-  }
-  const topCard = game.discardPile[game.discardPile.length - 1];
-  const isMyTurn = players[game.currentPlayerIndex]?.id === playerId;
-  const canPreCallForPair =
-    isMyTurn && player.hand.length === 3 && hasPlayablePair(player.hand, topCard, game.activeColor);
-  const canPreCallForJumpIn =
-    options?.gameMode === 'jump_in' &&
-    player.hand.length === 2 &&
-    player.hand.some((c) => canJumpInCard(c, topCard, game.activeColor));
-
-  if (
-    player.hand.length === 1 ||
-    (isMyTurn && player.hand.length === 2) ||
-    canPreCallForPair ||
-    canPreCallForJumpIn
-  ) {
-    player.unoCalled = true;
-    player.unoVulnerable = false;
-    pushEvent(game, `${player.name} ruft UNO!`);
-    return { ok: true };
-  }
-  return {
-    ok: false,
-    error: 'UNO! kannst du erst vor deiner vorletzten bzw. bei 1 Karte rufen.',
-  };
-}
-
-export function catchUno(
-  game: InternalGameState,
-  players: InternalPlayer[],
-  catcherId: string,
-  targetPlayerId: string
-): EngineActionResult {
-  if (game.roundSummary) {
-    return { ok: false, error: 'Runde bereits beendet.' };
-  }
-  if (catcherId === targetPlayerId) {
-    return { ok: false, error: 'Du kannst dich nicht selbst erwischen.' };
-  }
-  const catcher = players.find((p) => p.id === catcherId);
-  const target = players.find((p) => p.id === targetPlayerId);
-  if (!catcher || !target) {
-    return { ok: false, error: 'Spieler nicht gefunden.' };
-  }
-  if (!target.unoVulnerable || target.hand.length !== 1) {
-    return {
-      ok: false,
-      error: `${target.name} hat bereits UNO gerufen oder ist nicht angreifbar.`,
-    };
-  }
-  target.unoVulnerable = false;
-  target.unoCalled = false;
-  giveCardsToPlayer(game, target, 2);
-  pushEvent(game, `${catcher.name} hat ${target.name} erwischt! +2 Strafkarten.`);
   return { ok: true };
 }
 

@@ -26,16 +26,6 @@ export interface PublicPlayer {
   disconnectedAt: number | null;
   cardCount: number;
   score: number;
-  unoCalled: boolean;
-  unoVulnerable: boolean;
-}
-
-export interface PendingChallenge {
-  offenderId: string;
-  offenderName: string;
-  targetId: string;
-  targetName: string;
-  chosenColor: CardColor;
 }
 
 export interface GameEvent {
@@ -80,7 +70,6 @@ export interface ClientRoomState {
   pendingInitialColorChoice: boolean;
   drawnDecisionPlayerId: string | null;
   drawnPlayableCardId: string | null;
-  pendingChallenge: PendingChallenge | null;
   lastEvent: GameEvent | null;
   eventLog: GameEvent[];
   roundSummary: RoundSummary | null;
@@ -141,15 +130,6 @@ export interface ClientToServerEvents {
   ) => void;
   'game:draw_card': (ack?: (res: RoomActionResponse) => void) => void;
   'game:keep_drawn_card': (ack?: (res: RoomActionResponse) => void) => void;
-  'game:resolve_challenge': (
-    payload: { challenge: boolean },
-    ack?: (res: RoomActionResponse) => void
-  ) => void;
-  'game:call_uno': (ack?: (res: RoomActionResponse) => void) => void;
-  'game:catch_uno': (
-    payload: { targetPlayerId: string },
-    ack?: (res: RoomActionResponse) => void
-  ) => void;
 }
 
 export interface ServerToClientEvents {

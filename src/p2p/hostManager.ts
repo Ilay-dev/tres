@@ -11,8 +11,6 @@ import {
   CARD_COLORS,
   type InternalGameState,
   type InternalPlayer,
-  callUno,
-  catchUno,
   chooseInitialColor,
   drawCardAction,
   isCardPlayable,
@@ -20,7 +18,6 @@ import {
   nextPlayerIndex,
   playCards,
   pushEvent,
-  resolveWild4Challenge,
   secureRandomInt,
   startRound,
 } from '../../shared/gameEngine.js';
@@ -79,8 +76,6 @@ export class BrowserHostManager {
       socketId: 'HOST_LOCAL',
       hand: [],
       score: 0,
-      unoCalled: false,
-      unoVulnerable: false,
     };
 
     this.room = {
@@ -158,8 +153,6 @@ export class BrowserHostManager {
       disconnectedAt: p.disconnectedAt,
       cardCount: p.hand.length,
       score: p.score,
-      unoCalled: p.unoCalled,
-      unoVulnerable: p.unoVulnerable,
     }));
 
     const currentPlayer =
@@ -188,15 +181,6 @@ export class BrowserHostManager {
       drawnDecisionPlayerId: game?.drawnDecisionPlayerId ?? null,
       drawnPlayableCardId:
         game && game.drawnDecisionPlayerId === playerId ? game.drawnPlayableCardId : null,
-      pendingChallenge: game?.pendingChallenge
-        ? {
-            offenderId: game.pendingChallenge.offenderId,
-            offenderName: game.pendingChallenge.offenderName,
-            targetId: game.pendingChallenge.targetId,
-            targetName: game.pendingChallenge.targetName,
-            chosenColor: game.pendingChallenge.chosenColor,
-          }
-        : null,
       lastEvent: game?.eventLog[0] ?? null,
       eventLog: game?.eventLog ?? [],
       roundSummary: game?.roundSummary ?? null,
@@ -246,8 +230,6 @@ export class BrowserHostManager {
       socketId: peerId,
       hand: [],
       score: 0,
-      unoCalled: false,
-      unoVulnerable: false,
     };
 
     this.room.players.push(player);
@@ -344,14 +326,6 @@ export class BrowserHostManager {
       return;
     }
 
-    if (game.pendingChallenge) {
-      if (
-        game.pendingChallenge.targetId === removed.id ||
-        game.pendingChallenge.offenderId === removed.id
-      ) {
-        game.pendingChallenge = null;
-      }
-    }
     if (game.drawnDecisionPlayerId === removed.id) {
       game.drawnDecisionPlayerId = null;
       game.drawnPlayableCardId = null;
@@ -424,8 +398,6 @@ export class BrowserHostManager {
       socketId: null,
       hand: [],
       score: 0,
-      unoCalled: false,
-      unoVulnerable: false,
     };
 
     this.room.players.push(bot);
@@ -473,19 +445,15 @@ export class BrowserHostManager {
       game.pendingInitialColorChoice = false;
       game.activeColor = 'red';
     }
-    if (game.pendingChallenge && game.pendingChallenge.targetId === target.id) {
-      resolveWild4Challenge(game, this.room.players, target.id, false);
-    } else {
-      game.drawnDecisionPlayerId = null;
-      game.drawnPlayableCardId = null;
-      game.currentPlayerIndex = nextPlayerIndex(
-        game.currentPlayerIndex,
-        game.direction,
-        this.room.players.length,
-        1
-      );
-      pushEvent(game, `${target.name} ist getrennt — Zug übersprungen.`);
-    }
+    game.drawnDecisionPlayerId = null;
+    game.drawnPlayableCardId = null;
+    game.currentPlayerIndex = nextPlayerIndex(
+      game.currentPlayerIndex,
+      game.direction,
+      this.room.players.length,
+      1
+    );
+    pushEvent(game, `${target.name} ist getrennt — Zug übersprungen.`);
 
     this.broadcast();
     this.scheduleBotTurnIfNeeded();
@@ -506,8 +474,6 @@ export class BrowserHostManager {
     this.room.game = null;
     for (const p of this.room.players) {
       p.hand = [];
-      p.unoCalled = false;
-      p.unoVulnerable = false;
       p.isReady = p.isBot;
     }
     this.broadcast();
@@ -654,45 +620,6 @@ export class BrowserHostManager {
         }
         return res;
       }
-      case 'game:resolve_challenge': {
-        const player = this.findPlayerByPeer(peerId);
-        if (!player || this.room.phase !== 'playing' || !this.room.game) {
-          return { ok: false, error: 'Keine aktive Runde.' };
-        }
-        const res = resolveWild4Challenge(
-          this.room.game,
-          this.room.players,
-          player.id,
-          Boolean(payload?.challenge)
-        );
-        if (res.ok) {
-          this.broadcast();
-          this.scheduleBotTurnIfNeeded();
-        }
-        return res;
-      }
-      case 'game:call_uno': {
-        const player = this.findPlayerByPeer(peerId);
-        if (!player || this.room.phase !== 'playing' || !this.room.game) {
-          return { ok: false, error: 'Keine aktive Runde.' };
-        }
-        const res = callUno(this.room.game, this.room.players, player.id, {
-          gameMode: this.room.gameMode,
-        });
-        if (res.ok) this.broadcast();
-        return res;
-      }
-      case 'game:catch_uno': {
-        const player = this.findPlayerByPeer(peerId);
-        if (!player || this.room.phase !== 'playing' || !this.room.game) {
-          return { ok: false, error: 'Keine aktive Runde.' };
-        }
-        const targetId =
-          typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId : '';
-        const res = catchUno(this.room.game, this.room.players, player.id, targetId);
-        if (res.ok) this.broadcast();
-        return res;
-      }
       default:
         return { ok: false, error: 'Unbekannte Aktion.' };
     }
@@ -747,23 +674,9 @@ export class BrowserHostManager {
       return;
     }
 
-    if (game.pendingChallenge && game.pendingChallenge.targetId === bot.id) {
-      const offender = this.room.players.find((p) => p.id === game.pendingChallenge?.offenderId);
-      const shouldChallenge = offender
-        ? offender.hand.length <= 3 || secureRandomInt(0, 100) < 25
-        : false;
-      resolveWild4Challenge(game, this.room.players, bot.id, shouldChallenge);
-      this.broadcast();
-      this.scheduleBotTurnIfNeeded();
-      return;
-    }
-
     if (game.drawnDecisionPlayerId === bot.id && game.drawnPlayableCardId) {
       const drawnCard = bot.hand.find((c) => c.id === game.drawnPlayableCardId);
       if (drawnCard) {
-        if (bot.hand.length === 2) {
-          callUno(game, this.room.players, bot.id, { gameMode: this.room.gameMode });
-        }
         const chosenColor =
           drawnCard.color === 'wild' ? this.pickBestColorForBot(bot) : undefined;
         const res = playCards(game, this.room.players, bot.id, [drawnCard.id], chosenColor, {
@@ -799,10 +712,6 @@ export class BrowserHostManager {
             )
           : undefined;
       const cardIds = twin ? [chosen.id, twin.id] : [chosen.id];
-
-      if (bot.hand.length - cardIds.length === 1 && secureRandomInt(0, 100) < 85) {
-        callUno(game, this.room.players, bot.id, { gameMode: this.room.gameMode });
-      }
 
       const chosenColor = chosen.color === 'wild' ? this.pickBestColorForBot(bot) : undefined;
       const res = playCards(game, this.room.players, bot.id, cardIds, chosenColor, {

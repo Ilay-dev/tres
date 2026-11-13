@@ -158,24 +158,6 @@ io.on('connection', (socket) => {
     ack?.(res);
   });
 
-  socket.on('game:resolve_challenge', (payload, ack) => {
-    const challenge = Boolean(payload?.challenge);
-    const res = manager.handleResolveChallenge(socket.id, challenge);
-    ack?.(res);
-  });
-
-  socket.on('game:call_uno', (ack) => {
-    const res = manager.handleCallUno(socket.id);
-    ack?.(res);
-  });
-
-  socket.on('game:catch_uno', (payload, ack) => {
-    const targetPlayerId =
-      typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId : '';
-    const res = manager.handleCatchUno(socket.id, targetPlayerId);
-    ack?.(res);
-  });
-
   socket.on('disconnect', () => {
     manager.handleDisconnect(socket.id);
   });

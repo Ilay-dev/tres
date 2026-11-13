@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpDown,
   Bot,
-  Check,
   HelpCircle,
   Layers,
   LogOut,
@@ -29,7 +28,6 @@ import {
   sortHand,
 } from '../utils/cardLabels.ts';
 import { CardBack } from './CardBack.tsx';
-import { ChallengeModal } from './ChallengeModal.tsx';
 import { ColorPickerModal } from './ColorPickerModal.tsx';
 import { RoundOverModal } from './RoundOverModal.tsx';
 import { UnoCard } from './UnoCard.tsx';
@@ -43,9 +41,6 @@ interface GameTableProps {
   onDrawCard: () => void;
   onKeepDrawnCard: () => void;
   onChooseInitialColor: (color: CardColor) => void;
-  onResolveChallenge: (challenge: boolean) => void;
-  onCallUno: () => void;
-  onCatchUno: (targetPlayerId: string) => void;
   onSkipDisconnected: (targetPlayerId: string) => void;
   onToggleReady: () => void;
   onReturnToLobby: () => void;
@@ -54,7 +49,6 @@ interface GameTableProps {
   onPlayDrawSound: () => void;
   onPlayTurnSound: () => void;
   onPlayRejectSound: () => void;
-  onPlayUnoSound: () => void;
   onPlayWinSound: () => void;
 }
 
@@ -79,9 +73,6 @@ export function GameTable({
   onDrawCard,
   onKeepDrawnCard,
   onChooseInitialColor,
-  onResolveChallenge,
-  onCallUno,
-  onCatchUno,
   onSkipDisconnected,
   onToggleReady,
   onReturnToLobby,
@@ -90,7 +81,6 @@ export function GameTable({
   onPlayDrawSound,
   onPlayTurnSound,
   onPlayRejectSound,
-  onPlayUnoSound,
   onPlayWinSound,
 }: GameTableProps) {
   const [sorted, setSorted] = useState(true);
@@ -115,15 +105,12 @@ export function GameTable({
     return () => observer.disconnect();
   }, []);
 
-  const me = room.players.find((p) => p.id === room.myPlayerId);
   const isHost = room.hostId === room.myPlayerId;
   const isMyTurn = room.phase === 'playing' && room.currentPlayerId === room.myPlayerId;
   const isDrawnDecision =
     room.phase === 'playing' && room.drawnDecisionPlayerId === room.myPlayerId;
   const isInitialColorTurn =
     room.phase === 'playing' && room.pendingInitialColorChoice && isMyTurn;
-  const isChallengeTarget =
-    room.phase === 'playing' && room.pendingChallenge?.targetId === room.myPlayerId;
 
   useEffect(() => {
     if (!isMyTurn || room.phase !== 'playing') {
@@ -156,7 +143,7 @@ export function GameTable({
   );
 
   const hasAnyPlayablePair = useMemo(() => {
-    if (!isMyTurn || isDrawnDecision || isInitialColorTurn || room.pendingChallenge) {
+    if (!isMyTurn || isDrawnDecision || isInitialColorTurn) {
       return false;
     }
     return room.myHand.some(
@@ -169,7 +156,6 @@ export function GameTable({
     isMyTurn,
     isDrawnDecision,
     isInitialColorTurn,
-    room.pendingChallenge,
     room.myHand,
     room.topCard,
     room.activeColor,
@@ -179,7 +165,6 @@ export function GameTable({
   const prevTurnRef = useRef<string | null>(null);
   const prevDiscardIdRef = useRef<string | null>(null);
   const prevPhaseRef = useRef(room.phase);
-  const prevUnoCalledRef = useRef<number>(0);
 
   useEffect(() => {
     if (room.phase === 'round_over' && prevPhaseRef.current !== 'round_over') {
@@ -206,29 +191,9 @@ export function GameTable({
     prevDiscardIdRef.current = room.topCard?.id ?? null;
   }, [room.topCard, onPlayCardSound]);
 
-  useEffect(() => {
-    const unoCount = room.players.filter((p) => p.unoCalled).length;
-    if (unoCount > prevUnoCalledRef.current) {
-      onPlayUnoSound();
-    }
-    prevUnoCalledRef.current = unoCount;
-  }, [room.players, onPlayUnoSound]);
-
-  const canInteractNormally =
-    isMyTurn && !isInitialColorTurn && !room.pendingChallenge;
+  const canInteractNormally = isMyTurn && !isInitialColorTurn;
 
   const canDraw = canInteractNormally && !isDrawnDecision;
-
-  const canCallUno =
-    room.phase === 'playing' &&
-    me &&
-    !me.unoCalled &&
-    ((isMyTurn && room.myHand.length === 2) ||
-      room.myHand.length === 1 ||
-      (isMyTurn && room.myHand.length === 3 && hasAnyPlayablePair) ||
-      (room.gameMode === 'jump_in' &&
-        room.myHand.length === 2 &&
-        room.myHand.some((c) => canJumpInClient(c, room.topCard, room.activeColor))));
 
   const triggerReject = (cardId: string, reason: string) => {
     setRejectedCardId(cardId);
@@ -258,10 +223,6 @@ export function GameTable({
 
     if (room.pendingInitialColorChoice) {
       triggerReject(card.id, 'Zuerst Startfarbe wählen.');
-      return;
-    }
-    if (room.pendingChallenge) {
-      triggerReject(card.id, 'Zuerst das +4 klären.');
       return;
     }
 
@@ -319,10 +280,6 @@ export function GameTable({
     pendingWildCardIds && pendingWildCardIds.length > 0
       ? room.myHand.find((c) => c.id === pendingWildCardIds[0]) ?? null
       : null;
-
-  const hasMatchingActiveColorInHand =
-    room.activeColor !== null &&
-    room.myHand.some((c) => c.color === room.activeColor);
 
   // Semicircle / Arc fan layout calculations
   const cardWidthPx = fanWidth < 640 ? 84 : 96;
@@ -485,19 +442,7 @@ export function GameTable({
                     )}
                   </div>
 
-                  {opp.unoVulnerable && opp.cardCount === 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => onCatchUno(opp.id)}
-                      className="rounded-md bg-white text-black px-2 py-0.5 text-[10px] font-bold hover:bg-zinc-200 transition-colors cursor-pointer animate-pulse"
-                    >
-                      Erwischt! (+2)
-                    </button>
-                  ) : opp.unoCalled && opp.cardCount === 1 ? (
-                    <span className="rounded-md border border-white/30 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white">
-                      UNO!
-                    </span>
-                  ) : !opp.connected && !opp.isBot ? (
+                  {!opp.connected && !opp.isBot ? (
                     <span className="text-[10px] text-zinc-500">Getrennt</span>
                   ) : null}
                 </div>
@@ -638,84 +583,62 @@ export function GameTable({
             </div>
           )}
 
-          {/* Status & Controls Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-            <div className="flex items-center gap-2">
+          {/* Centered Turn Indicator & Controls Bar */}
+          <div className="flex flex-col items-center gap-2.5 px-1">
+            <div
+              className={`inline-flex items-center justify-center gap-2.5 rounded-full px-6 py-2 text-sm sm:text-base font-semibold tracking-tight transition-all ${
+                isMyTurn
+                  ? 'bg-white text-black shadow-[0_0_24px_rgba(255,255,255,0.2)]'
+                  : 'border border-white/15 bg-[#09090B] text-zinc-200'
+              }`}
+            >
               <span
-                className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium ${
-                  isMyTurn
-                    ? 'bg-white text-black font-semibold'
-                    : 'border border-white/12 bg-[#09090B] text-zinc-400'
+                className={`w-2 h-2 rounded-full ${
+                  isMyTurn ? 'bg-black animate-pulse' : 'bg-zinc-400'
                 }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isMyTurn ? 'bg-black' : 'bg-zinc-500'
-                  }`}
-                />
-                <span>
-                  {room.pendingChallenge
-                    ? `Warte auf ${room.pendingChallenge.targetName} (+4)…`
-                    : isMyTurn
-                      ? 'Du bist am Zug'
-                      : `${currentPlayer?.name ?? '…'} ist am Zug`}
-                </span>
-              </span>
-
-              <span className="font-mono-code text-xs text-zinc-500">
-                {room.myHand.length} {room.myHand.length === 1 ? 'Karte' : 'Karten'}
+              />
+              <span>
+                {isMyTurn
+                  ? 'Du bist am Zug'
+                  : `${currentPlayer?.name ?? '…'} ist am Zug`}
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              {hasAnyPlayablePair && (
+            <div className="w-full flex items-center justify-between gap-2">
+              <span className="font-mono-code text-xs text-zinc-500">
+                {room.myHand.length} {room.myHand.length === 1 ? 'Karte' : 'Karten'}
+              </span>
+
+              <div className="flex items-center gap-2">
+                {hasAnyPlayablePair && (
+                  <button
+                    type="button"
+                    onClick={() => setPairMode((p) => !p)}
+                    title="2 identische Karten gleichzeitig legen"
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                      pairMode
+                        ? 'border-white bg-white text-black font-semibold'
+                        : 'border-white/20 text-zinc-300 hover:text-white hover:border-white/40'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>2× Paar</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => setPairMode((p) => !p)}
-                  title="2 identische Karten gleichzeitig legen"
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
-                    pairMode
-                      ? 'border-white bg-white text-black font-semibold'
-                      : 'border-white/20 text-zinc-300 hover:text-white hover:border-white/40'
+                  onClick={() => setSorted((s) => !s)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
+                    sorted
+                      ? 'border-white/25 text-white bg-white/[0.06]'
+                      : 'border-white/12 text-zinc-400 hover:text-white'
                   }`}
                 >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>2× Paar</span>
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  <span>Sortiert</span>
                 </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setSorted((s) => !s)}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
-                  sorted
-                    ? 'border-white/25 text-white bg-white/[0.06]'
-                    : 'border-white/12 text-zinc-400 hover:text-white'
-                }`}
-              >
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                <span>Sortiert</span>
-              </button>
-
-              {me?.unoCalled && room.myHand.length <= 2 ? (
-                <span className="inline-flex items-center gap-1 rounded-lg border border-white/30 bg-white/[0.08] px-3 py-1.5 text-xs font-bold tracking-wider text-white">
-                  <Check className="w-3.5 h-3.5" />
-                  <span>UNO!</span>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={!canCallUno}
-                  onClick={onCallUno}
-                  className={`rounded-lg px-4 py-1.5 text-xs font-bold tracking-wider transition-all ${
-                    canCallUno
-                      ? 'bg-white text-black hover:bg-zinc-200 cursor-pointer shadow-[0_0_18px_rgba(255,255,255,0.25)]'
-                      : 'border border-white/10 text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  UNO!
-                </button>
-              )}
+              </div>
             </div>
           </div>
 
@@ -734,7 +657,6 @@ export function GameTable({
                 isMyTurn &&
                 !isDrawnDecision &&
                 !isInitialColorTurn &&
-                !room.pendingChallenge &&
                 isPlayableClient(card, room.topCard, room.activeColor)
                   ? findTwinCard(card, room.myHand)
                   : undefined;
@@ -797,11 +719,6 @@ export function GameTable({
       {pendingWildCard && pendingWildCardIds && (
         <ColorPickerModal
           title="Farbe wählen"
-          subtitle={
-            pendingWildCard.value === 'wild4' && hasMatchingActiveColorInHand && activeColorMeta
-              ? `Hinweis: Du hast noch ${activeColorMeta.label} auf der Hand (Bluff — kann angezweifelt werden).`
-              : undefined
-          }
           onSelect={async (color) => {
             const ids = pendingWildCardIds;
             setPendingWildCardIds(null);
@@ -811,13 +728,6 @@ export function GameTable({
             }
           }}
           onCancel={() => setPendingWildCardIds(null)}
-        />
-      )}
-
-      {isChallengeTarget && room.pendingChallenge && (
-        <ChallengeModal
-          challenge={room.pendingChallenge}
-          onResolve={onResolveChallenge}
         />
       )}
 

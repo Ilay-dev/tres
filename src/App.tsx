@@ -32,9 +32,6 @@ export default function App() {
     playCards,
     drawCard,
     keepDrawnCard,
-    resolveChallenge,
-    callUno,
-    catchUno,
   } = useUnoSocket();
 
   const {
@@ -44,7 +41,6 @@ export default function App() {
     playDrawSound,
     playTurnSound,
     playRejectSound,
-    playUnoSound,
     playWinSound,
   } = useSound();
 
@@ -128,9 +124,6 @@ export default function App() {
           onDrawCard={drawCard}
           onKeepDrawnCard={keepDrawnCard}
           onChooseInitialColor={chooseInitialColor}
-          onResolveChallenge={resolveChallenge}
-          onCallUno={callUno}
-          onCatchUno={catchUno}
           onSkipDisconnected={skipDisconnected}
           onToggleReady={toggleReady}
           onReturnToLobby={nextRoundToLobby}
@@ -139,7 +132,6 @@ export default function App() {
           onPlayDrawSound={playDrawSound}
           onPlayTurnSound={playTurnSound}
           onPlayRejectSound={playRejectSound}
-          onPlayUnoSound={playUnoSound}
           onPlayWinSound={playWinSound}
         />
       )}
