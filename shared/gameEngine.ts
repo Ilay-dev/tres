@@ -40,8 +40,7 @@ export interface InternalGameState {
   direction: TurnDirection;
   activeColor: CardColor;
   pendingInitialColorChoice: boolean;
-  drawnDecisionPlayerId: string | null;
-  drawnPlayableCardId: string | null;
+  pendingDrawCount: number;
   roundSummary: RoundSummary | null;
   eventLog: GameEvent[];
 }
@@ -146,8 +145,15 @@ export function formatCardLabelDe(card: UnoCard): string {
 export function isCardPlayable(
   card: UnoCard,
   topCard: UnoCard,
-  activeColor: CardColor
+  activeColor: CardColor,
+  pendingDrawCount = 0
 ): boolean {
+  if (pendingDrawCount > 0) {
+    if (topCard.value === 'wild4') {
+      return card.value === 'wild4';
+    }
+    return card.value === 'draw2' || card.value === 'wild4';
+  }
   if (card.color === 'wild') return true;
   if (card.color === activeColor) return true;
   if (card.value === topCard.value) return true;
@@ -254,8 +260,7 @@ export function startRound(
     direction: 1,
     activeColor: firstCard.color === 'wild' ? 'red' : firstCard.color,
     pendingInitialColorChoice: false,
-    drawnDecisionPlayerId: null,
-    drawnPlayableCardId: null,
+    pendingDrawCount: 0,
     roundSummary: null,
     eventLog: [],
   };
@@ -292,11 +297,11 @@ export function startRound(
       );
     }
   } else if (firstCard.value === 'draw2') {
-    giveCardsToPlayer(game, players[0], 2);
-    game.currentPlayerIndex = nextPlayerIndex(0, 1, players.length, 1);
+    game.pendingDrawCount = 2;
+    game.currentPlayerIndex = 0;
     pushEvent(
       game,
-      `Startkarte: +2 — ${players[0].name} zieht 2 Karten und setzt aus.`,
+      `Startkarte: +2 — ${players[0].name} kann +2/+4 legen oder 2 Karten ziehen.`,
       firstCard.color === 'wild' ? 'neutral' : firstCard.color
     );
   } else {
@@ -343,8 +348,7 @@ function finalizeRoundWin(
     pointsEarned,
     breakdown,
   };
-  game.drawnDecisionPlayerId = null;
-  game.drawnPlayableCardId = null;
+  game.pendingDrawCount = 0;
   game.pendingInitialColorChoice = false;
   pushEvent(game, `${winner.name} gewinnt Runde ${game.roundNumber} (+${pointsEarned} Punkte)!`);
 }
@@ -434,9 +438,6 @@ export function playCards(
     if (!isTurnPlayer) {
       return { ok: false, error: '2 Karten gleichzeitig kannst du nur in deinem Zug legen.' };
     }
-    if (game.drawnDecisionPlayerId) {
-      return { ok: false, error: 'Nach dem Ziehen darfst du nur die gezogene Karte legen.' };
-    }
     const secondCard = selectedCards[1];
     if (
       primaryCard.color === 'wild' ||
@@ -449,28 +450,26 @@ export function playCards(
         error: 'Gleichzeitig legen geht nur mit 2 Karten derselben Farbe und demselben Wert.',
       };
     }
-    if (!isCardPlayable(primaryCard, topCard, game.activeColor)) {
+    if (!isCardPlayable(primaryCard, topCard, game.activeColor, game.pendingDrawCount)) {
       return { ok: false, error: 'Diese Karten passen nicht auf die aktuelle Ablagekarte.' };
     }
   } else {
     if (isTurnPlayer) {
-      if (game.drawnDecisionPlayerId) {
-        if (
-          game.drawnDecisionPlayerId !== playerId ||
-          game.drawnPlayableCardId !== primaryCard.id
-        ) {
-          return {
-            ok: false,
-            error: 'Nach dem Ziehen darfst du nur die gezogene Karte spielen oder behalten.',
-          };
-        }
-      }
-      if (!isCardPlayable(primaryCard, topCard, game.activeColor)) {
-        return { ok: false, error: 'Diese Karte passt nicht auf die aktuelle Ablagekarte.' };
+      if (!isCardPlayable(primaryCard, topCard, game.activeColor, game.pendingDrawCount)) {
+        return {
+          ok: false,
+          error:
+            game.pendingDrawCount > 0
+              ? `Aktuell liegt +${game.pendingDrawCount} — lege eine passende Strafkarte oder ziehe.`
+              : 'Diese Karte passt nicht auf die aktuelle Ablagekarte.',
+        };
       }
     } else {
       if (gameMode !== 'jump_in') {
         return { ok: false, error: 'Du bist nicht am Zug.' };
+      }
+      if (game.pendingDrawCount > 0) {
+        return { ok: false, error: 'Bei aktivem Strafstapel kann nicht eingeworfen werden.' };
       }
       if (!canJumpInCard(primaryCard, topCard, game.activeColor)) {
         return {
@@ -491,8 +490,6 @@ export function playCards(
 
   actingPlayer.hand = actingPlayer.hand.filter((c) => !uniqueIds.has(c.id));
   game.discardPile.push(...selectedCards);
-  game.drawnDecisionPlayerId = null;
-  game.drawnPlayableCardId = null;
 
   if (actingPlayer.hand.length === 0) {
     if (primaryCard.color !== 'wild') {
@@ -502,7 +499,8 @@ export function playCards(
     }
 
     if (primaryCard.value === 'draw2') {
-      const drawAmount = selectedCards.length * 2;
+      const drawAmount = game.pendingDrawCount + selectedCards.length * 2;
+      game.pendingDrawCount = 0;
       const victimIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
       giveCardsToPlayer(game, players[victimIndex], drawAmount);
       pushEvent(
@@ -511,11 +509,13 @@ export function playCards(
         game.activeColor
       );
     } else if (primaryCard.value === 'wild4') {
+      const drawAmount = game.pendingDrawCount + 4;
+      game.pendingDrawCount = 0;
       const victimIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
-      giveCardsToPlayer(game, players[victimIndex], 4);
+      giveCardsToPlayer(game, players[victimIndex], drawAmount);
       pushEvent(
         game,
-        `${actingPlayer.name} legt +4 als letzte Karte — ${players[victimIndex].name} zieht 4.`,
+        `${actingPlayer.name} legt +4 als letzte Karte — ${players[victimIndex].name} zieht ${drawAmount}.`,
         game.activeColor
       );
     }
@@ -536,13 +536,13 @@ export function playCards(
     );
   } else if (primaryCard.value === 'wild4') {
     game.activeColor = chosenColor!;
-    const victimIdx = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
-    const victim = players[victimIdx];
-    giveCardsToPlayer(game, victim, 4);
-    game.currentPlayerIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 2);
+    game.pendingDrawCount += 4;
+    game.currentPlayerIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
     pushEvent(
       game,
-      `${actingPlayer.name} spielt +4 (Farbe: ${COLOR_LABELS_DE[game.activeColor]}) — ${victim.name} zieht 4 Karten und setzt aus.`,
+      game.pendingDrawCount > 4
+        ? `${actingPlayer.name} erhöht mit +4 (Farbe: ${COLOR_LABELS_DE[game.activeColor]}) auf +${game.pendingDrawCount}!`
+        : `${actingPlayer.name} spielt +4 (Farbe: ${COLOR_LABELS_DE[game.activeColor]}).`,
       game.activeColor
     );
   } else if (primaryCard.value === 'skip') {
@@ -604,16 +604,16 @@ export function playCards(
     }
   } else if (primaryCard.value === 'draw2') {
     game.activeColor = primaryCard.color as CardColor;
-    const drawAmount = pairCount * 2;
-    const victimIdx = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
-    const victim = players[victimIdx];
-    giveCardsToPlayer(game, victim, drawAmount);
-    game.currentPlayerIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 2);
+    const added = pairCount * 2;
+    game.pendingDrawCount += added;
+    game.currentPlayerIndex = nextPlayerIndex(playerIndex, game.direction, players.length, 1);
     pushEvent(
       game,
-      isJumpIn
-        ? `${actingPlayer.name} wirft +2 ein — ${victim.name} zieht 2 Karten und setzt aus.`
-        : `${actingPlayer.name} spielt ${pairCount === 2 ? '2× +2' : '+2'} — ${victim.name} zieht ${drawAmount} Karten und setzt aus.`,
+      game.pendingDrawCount > added
+        ? `${actingPlayer.name} erhöht mit ${pairCount === 2 ? '2× +2' : '+2'} auf +${game.pendingDrawCount}!`
+        : isJumpIn
+          ? `${actingPlayer.name} wirft +2 ein (+${game.pendingDrawCount}).`
+          : `${actingPlayer.name} spielt ${pairCount === 2 ? '2× +2' : '+2'} (+${game.pendingDrawCount}).`,
       game.activeColor
     );
   } else {
@@ -651,65 +651,36 @@ export function drawCardAction(
   if (game.pendingInitialColorChoice) {
     return { ok: false, error: 'Zuerst muss die Startfarbe gewählt werden.' };
   }
-  if (game.drawnDecisionPlayerId) {
-    return { ok: false, error: 'Du hast bereits eine Karte gezogen.' };
-  }
 
   const currentPlayer = players[game.currentPlayerIndex];
   if (!currentPlayer || currentPlayer.id !== playerId) {
     return { ok: false, error: 'Du bist nicht am Zug.' };
   }
 
-  const drawn = giveCardsToPlayer(game, currentPlayer, 1);
-  if (drawn.length === 0) {
-    game.currentPlayerIndex = nextPlayerIndex(
-      game.currentPlayerIndex,
-      game.direction,
-      players.length,
-      1
+  if (game.pendingDrawCount > 0) {
+    const penalty = game.pendingDrawCount;
+    const drawn = giveCardsToPlayer(game, currentPlayer, penalty);
+    game.pendingDrawCount = 0;
+    pushEvent(
+      game,
+      `${currentPlayer.name} zieht ${drawn.length} Strafkarten und ist noch am Zug.`
     );
-    pushEvent(game, `Nachziehstapel leer — ${currentPlayer.name} gibt ab.`);
     return { ok: true };
   }
 
-  const drawnCard = drawn[0];
-  const topCard = game.discardPile[game.discardPile.length - 1];
-
-  if (isCardPlayable(drawnCard, topCard, game.activeColor)) {
-    game.drawnDecisionPlayerId = currentPlayer.id;
-    game.drawnPlayableCardId = drawnCard.id;
-    pushEvent(game, `${currentPlayer.name} zieht eine spielbare Karte.`);
-  } else {
-    game.currentPlayerIndex = nextPlayerIndex(
-      game.currentPlayerIndex,
-      game.direction,
-      players.length,
-      1
-    );
-    pushEvent(game, `${currentPlayer.name} zieht 1 Karte.`);
-  }
-
-  return { ok: true };
-}
-
-export function keepDrawnCard(
-  game: InternalGameState,
-  players: InternalPlayer[],
-  playerId: string
-): EngineActionResult {
-  if (game.drawnDecisionPlayerId !== playerId) {
-    return { ok: false, error: 'Keine gezogene Karte zum Behalten vorhanden.' };
-  }
-  const currentPlayer = players[game.currentPlayerIndex];
-  game.drawnDecisionPlayerId = null;
-  game.drawnPlayableCardId = null;
+  const drawn = giveCardsToPlayer(game, currentPlayer, 1);
   game.currentPlayerIndex = nextPlayerIndex(
     game.currentPlayerIndex,
     game.direction,
     players.length,
     1
   );
-  pushEvent(game, `${currentPlayer.name} behält die gezogene Karte.`);
+  if (drawn.length === 0) {
+    pushEvent(game, `Nachziehstapel leer — ${currentPlayer.name} gibt ab.`);
+  } else {
+    pushEvent(game, `${currentPlayer.name} zieht 1 Karte.`);
+  }
+
   return { ok: true };
 }
 

@@ -15,7 +15,6 @@ import {
   chooseInitialColor,
   drawCardAction,
   isCardPlayable,
-  keepDrawnCard,
   nextPlayerIndex,
   playCards,
   pushEvent,
@@ -203,9 +202,7 @@ export class RoomManager {
       drawPileCount: game?.drawPile.length ?? 0,
       discardPileCount: game?.discardPile.length ?? 0,
       pendingInitialColorChoice: game?.pendingInitialColorChoice ?? false,
-      drawnDecisionPlayerId: game?.drawnDecisionPlayerId ?? null,
-      drawnPlayableCardId:
-        game && game.drawnDecisionPlayerId === playerId ? game.drawnPlayableCardId : null,
+      pendingDrawCount: game?.pendingDrawCount ?? 0,
       lastEvent: game?.eventLog[0] ?? null,
       eventLog: game?.eventLog ?? [],
       roundSummary: game?.roundSummary ?? null,
@@ -452,11 +449,6 @@ export class RoomManager {
       return;
     }
 
-    if (game.drawnDecisionPlayerId === removed.id) {
-      game.drawnDecisionPlayerId = null;
-      game.drawnPlayableCardId = null;
-    }
-
     if (idx < game.currentPlayerIndex) {
       game.currentPlayerIndex -= 1;
     } else if (idx === game.currentPlayerIndex) {
@@ -590,8 +582,6 @@ export class RoomManager {
       game.pendingInitialColorChoice = false;
       game.activeColor = 'red';
     }
-    game.drawnDecisionPlayerId = null;
-    game.drawnPlayableCardId = null;
     game.currentPlayerIndex = nextPlayerIndex(
       game.currentPlayerIndex,
       game.direction,
@@ -743,22 +733,6 @@ export class RoomManager {
     return res;
   }
 
-  public handleKeepDrawnCard(socketId: string): RoomActionResponse {
-    const session = this.getSession(socketId);
-    if (!session) return { ok: false, error: 'Nicht in einem Room.' };
-    const { room, player } = session;
-    if (room.phase !== 'playing' || !room.game) {
-      return { ok: false, error: 'Keine aktive Runde.' };
-    }
-    const res = keepDrawnCard(room.game, room.players, player.id);
-    if (!res.ok) return res;
-
-    room.lastActivityAt = Date.now();
-    this.onBroadcast(room);
-    this.scheduleBotTurnIfNeeded(room);
-    return res;
-  }
-
   private finishRound(room: Room): void {
     this.clearBotTimer(room);
     room.phase = 'round_over';
@@ -812,29 +786,11 @@ export class RoomManager {
       return;
     }
 
-    if (game.drawnDecisionPlayerId === bot.id && game.drawnPlayableCardId) {
-      const drawnCard = bot.hand.find((c) => c.id === game.drawnPlayableCardId);
-      if (drawnCard) {
-        const chosenColor =
-          drawnCard.color === 'wild' ? this.pickBestColorForBot(bot) : undefined;
-        const res = playCards(game, room.players, bot.id, [drawnCard.id], chosenColor, {
-          gameMode: room.gameMode,
-        });
-        if (res.roundEnded) {
-          this.finishRound(room);
-          return;
-        }
-      } else {
-        keepDrawnCard(game, room.players, bot.id);
-      }
-      this.onBroadcast(room);
-      this.scheduleBotTurnIfNeeded(room);
-      return;
-    }
-
     // 4. Normal turn: choose a legal card (prefer non-wild4 if holding activeColor)
     const topCard = game.discardPile[game.discardPile.length - 1];
-    const playable = bot.hand.filter((c) => isCardPlayable(c, topCard, game.activeColor));
+    const playable = bot.hand.filter((c) =>
+      isCardPlayable(c, topCard, game.activeColor, game.pendingDrawCount)
+    );
 
     if (playable.length > 0) {
       const nonWild4 = playable.filter((c) => c.value !== 'wild4');

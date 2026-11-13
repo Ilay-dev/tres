@@ -153,11 +153,6 @@ io.on('connection', (socket) => {
     ack?.(res);
   });
 
-  socket.on('game:keep_drawn_card', (ack) => {
-    const res = manager.handleKeepDrawnCard(socket.id);
-    ack?.(res);
-  });
-
   socket.on('disconnect', () => {
     manager.handleDisconnect(socket.id);
   });

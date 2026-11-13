@@ -68,8 +68,7 @@ export interface ClientRoomState {
   drawPileCount: number;
   discardPileCount: number;
   pendingInitialColorChoice: boolean;
-  drawnDecisionPlayerId: string | null;
-  drawnPlayableCardId: string | null;
+  pendingDrawCount: number;
   lastEvent: GameEvent | null;
   eventLog: GameEvent[];
   roundSummary: RoundSummary | null;
@@ -129,7 +128,6 @@ export interface ClientToServerEvents {
     ack?: (res: RoomActionResponse) => void
   ) => void;
   'game:draw_card': (ack?: (res: RoomActionResponse) => void) => void;
-  'game:keep_drawn_card': (ack?: (res: RoomActionResponse) => void) => void;
 }
 
 export interface ServerToClientEvents {

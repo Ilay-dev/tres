@@ -129,11 +129,12 @@ export function HomeScreen({
           <div className="mb-6 rounded-2xl border border-white/12 bg-[#0A0A0B] p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
             <div className="font-semibold text-white">Offizielle Standardregeln</div>
             <ul className="space-y-1 text-zinc-400 list-disc pl-4">
-              <li>108 Karten, 7 Handkarten pro Spieler, kein Stapeln von +2 / +4.</li>
+              <li>108 Karten, 7 Handkarten pro Spieler.</li>
+              <li>+2 und +4 können gestapelt werden (+2 auf +2, +4 auf +2/+4).</li>
+              <li>Wer Strafkarten (+2/+4) zieht, bleibt danach trotzdem am Zug.</li>
               <li>Bei 2 Spielern wirkt Richtungswechsel wie Aussetzen.</li>
               <li>2 identische Karten derselben Farbe &amp; Zahl können gleichzeitig gelegt werden.</li>
               <li>Optional in der Lobby: Modus „Einwerfen“ (identische Karte jederzeit legen).</li>
-              <li>Farbwahl +4 lässt den nächsten Spieler sofort 4 Karten ziehen und aussetzen.</li>
             </ul>
           </div>
         )}

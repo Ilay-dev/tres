@@ -4,7 +4,6 @@ import {
   chooseInitialColor,
   createStandardDeck,
   drawCardAction,
-  keepDrawnCard,
   playCard,
   playCards,
   startRound,
@@ -25,8 +24,6 @@ function makePlayers(count: number): InternalPlayer[] {
     socketId: `sock-${i + 1}`,
     hand: [],
     score: 0,
-    unoCalled: false,
-    unoVulnerable: false,
   }));
 }
 
@@ -43,9 +40,7 @@ function makeControlledGame(
     direction: 1,
     activeColor: topCard.color === 'wild' ? 'red' : topCard.color,
     pendingInitialColorChoice: false,
-    drawnDecisionPlayerId: null,
-    drawnPlayableCardId: null,
-    pendingChallenge: null,
+    pendingDrawCount: 0,
     roundSummary: null,
     eventLog: [],
   };
@@ -77,12 +72,11 @@ describe('Official Standard UNO Rules Engine', () => {
       const game = startRound(players, 1);
       const firstCard = game.discardPile[0];
       expect(firstCard.value).not.toBe('wild4');
-      players.forEach((p, idx) => {
-        if (idx === 0 && firstCard.value === 'draw2') {
-          expect(p.hand).toHaveLength(9);
-        } else {
-          expect(p.hand).toHaveLength(7);
-        }
+      if (firstCard.value === 'draw2') {
+        expect(game.pendingDrawCount).toBe(2);
+      }
+      players.forEach((p) => {
+        expect(p.hand).toHaveLength(7);
       });
       const totalCards =
         players.reduce((sum, p) => sum + p.hand.length, 0) +
@@ -123,13 +117,13 @@ describe('Official Standard UNO Rules Engine', () => {
     expect(game.currentPlayerIndex).toBe(2); // p3 is next counter-clockwise
   });
 
-  it('makes next player draw 2 and skips them on +2', () => {
+  it('on +2, next player can draw 2 and still take their turn (not skipped)', () => {
     const players = makePlayers(3);
     players[0].hand = [
       { id: 'r-d2', color: 'red', value: 'draw2' },
       { id: 'r-4', color: 'red', value: '4' },
     ];
-    players[1].hand = [{ id: 'b-2', color: 'blue', value: '2' }];
+    players[1].hand = [{ id: 'r-9', color: 'red', value: '9' }];
     players[2].hand = [{ id: 'g-3', color: 'green', value: '3' }];
 
     const game = makeControlledGame(
@@ -142,11 +136,27 @@ describe('Official Standard UNO Rules Engine', () => {
     );
 
     playCard(game, players, 'p1', 'r-d2');
+    expect(game.pendingDrawCount).toBe(2);
+    expect(game.currentPlayerIndex).toBe(1); // p2's turn
+
+    // p2 cannot play a normal red card before drawing the +2 penalty
+    const blocked = playCard(game, players, 'p2', 'r-9');
+    expect(blocked.ok).toBe(false);
+
+    // p2 draws the 2 penalty cards and is STILL on their turn!
+    const drawRes = drawCardAction(game, players, 'p2');
+    expect(drawRes.ok).toBe(true);
     expect(players[1].hand).toHaveLength(3);
-    expect(game.currentPlayerIndex).toBe(2); // p2 skipped, p3's turn
+    expect(game.pendingDrawCount).toBe(0);
+    expect(game.currentPlayerIndex).toBe(1); // p2 is NOT skipped!
+
+    // Now p2 can play their matching red 9
+    const playRes = playCard(game, players, 'p2', 'r-9');
+    expect(playRes.ok).toBe(true);
+    expect(game.currentPlayerIndex).toBe(2);
   });
 
-  it('allows immediate play or keeping a playable drawn card', () => {
+  it('adds drawn card directly into hand and advances turn without decision banner', () => {
     const players = makePlayers(2);
     players[0].hand = [{ id: 'b-9', color: 'blue', value: '9' }];
     players[1].hand = [{ id: 'g-3', color: 'green', value: '3' }];
@@ -154,48 +164,60 @@ describe('Official Standard UNO Rules Engine', () => {
     const game = makeControlledGame(
       players,
       { id: 'r-1', color: 'red', value: '1' },
-      [{ id: 'r-7', color: 'red', value: '7' }] // top of drawPile is last element
+      [{ id: 'r-7', color: 'red', value: '7' }]
     );
 
     const drawRes = drawCardAction(game, players, 'p1');
     expect(drawRes.ok).toBe(true);
-    expect(game.drawnDecisionPlayerId).toBe('p1');
-    expect(game.drawnPlayableCardId).toBe('r-7');
-    expect(game.currentPlayerIndex).toBe(0);
-
-    // Cannot play a different card from hand while in drawnDecision
-    const wrongPlay = playCard(game, players, 'p1', 'b-9');
-    expect(wrongPlay.ok).toBe(false);
-
-    // Can keep it and pass turn
-    const keepRes = keepDrawnCard(game, players, 'p1');
-    expect(keepRes.ok).toBe(true);
-    expect(game.drawnDecisionPlayerId).toBeNull();
-    expect(game.currentPlayerIndex).toBe(1);
     expect(players[0].hand).toHaveLength(2);
+    expect(players[0].hand.some((c) => c.id === 'r-7')).toBe(true);
+    expect(game.currentPlayerIndex).toBe(1);
   });
 
-  it('Wild+4 chooses color, immediately makes next player draw 4 cards, and skips them', () => {
+  it('stacks +2 -> +4 and +4 -> +8 and beyond', () => {
     const players = makePlayers(3);
     players[0].hand = [
-      { id: 'w4', color: 'wild', value: 'wild4' },
+      { id: 'r-d2', color: 'red', value: 'draw2' },
       { id: 'r-5', color: 'red', value: '5' },
     ];
-    players[1].hand = [{ id: 'g-3', color: 'green', value: '3' }];
-    players[2].hand = [{ id: 'b-7', color: 'blue', value: '7' }];
+    players[1].hand = [
+      { id: 'b-d2', color: 'blue', value: 'draw2' },
+      { id: 'w4-1', color: 'wild', value: 'wild4' },
+    ];
+    players[2].hand = [
+      { id: 'w4-2', color: 'wild', value: 'wild4' },
+      { id: 'g-d2', color: 'green', value: 'draw2' },
+    ];
 
-    const game = makeControlledGame(players, { id: 'r-1', color: 'red', value: '1' }, [
-      { id: 'x1', color: 'blue', value: '1' },
-      { id: 'x2', color: 'blue', value: '2' },
-      { id: 'x3', color: 'blue', value: '3' },
-      { id: 'x4', color: 'blue', value: '4' },
-    ]);
+    const drawPile = Array.from({ length: 12 }, (_, i) => ({
+      id: `x-${i}`,
+      color: 'yellow' as const,
+      value: '1' as const,
+    }));
 
-    const res = playCard(game, players, 'p1', 'w4', 'blue');
-    expect(res.ok).toBe(true);
-    expect(game.activeColor).toBe('blue');
-    expect(players[1].hand).toHaveLength(5); // 1 + 4 drawn immediately
-    expect(game.currentPlayerIndex).toBe(2); // p2 skipped, turn goes to p3
+    const game = makeControlledGame(players, { id: 'r-1', color: 'red', value: '1' }, drawPile);
+
+    // p1 plays +2 -> pendingDrawCount = 2
+    expect(playCard(game, players, 'p1', 'r-d2').ok).toBe(true);
+    expect(game.pendingDrawCount).toBe(2);
+    expect(game.currentPlayerIndex).toBe(1);
+
+    // p2 stacks blue +2 -> pendingDrawCount = 4
+    expect(playCard(game, players, 'p2', 'b-d2').ok).toBe(true);
+    expect(game.pendingDrawCount).toBe(4);
+    expect(game.currentPlayerIndex).toBe(2);
+
+    // p3 stacks +4 -> pendingDrawCount = 8
+    expect(playCard(game, players, 'p3', 'w4-2', 'red').ok).toBe(true);
+    expect(game.pendingDrawCount).toBe(8);
+    expect(game.activeColor).toBe('red');
+    expect(game.currentPlayerIndex).toBe(0);
+
+    // p1 has no +4, draws all 8 cards and keeps turn
+    expect(drawCardAction(game, players, 'p1').ok).toBe(true);
+    expect(players[0].hand).toHaveLength(9); // 1 remaining + 8 drawn
+    expect(game.pendingDrawCount).toBe(0);
+    expect(game.currentPlayerIndex).toBe(0);
   });
 
   it('recycles discard pile when draw pile runs out and scores round accurately', () => {

@@ -1,10 +1,11 @@
 interface CardBackProps {
   count: number;
   canDraw: boolean;
+  pendingDrawCount?: number;
   onClick?: () => void;
 }
 
-export function CardBack({ count, canDraw, onClick }: CardBackProps) {
+export function CardBack({ count, canDraw, pendingDrawCount = 0, onClick }: CardBackProps) {
   return (
     <button
       type="button"
@@ -69,7 +70,7 @@ export function CardBack({ count, canDraw, onClick }: CardBackProps) {
       <div className="relative z-10 w-full flex justify-center">
         {canDraw ? (
           <span className="rounded-full bg-white text-black px-2.5 py-0.5 text-[10px] font-bold tracking-wide">
-            Ziehen
+            {pendingDrawCount > 0 ? `+${pendingDrawCount} ziehen` : 'Ziehen'}
           </span>
         ) : (
           <span className="text-[10px] text-zinc-600 font-medium">Stapel</span>

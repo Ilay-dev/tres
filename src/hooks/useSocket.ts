@@ -526,10 +526,6 @@ export function useUnoSocket() {
     void dispatchAction('game:draw_card');
   }, [dispatchAction]);
 
-  const keepDrawnCard = useCallback(() => {
-    void dispatchAction('game:keep_drawn_card');
-  }, [dispatchAction]);
-
   return {
     connected,
     roomState,
@@ -548,6 +544,5 @@ export function useUnoSocket() {
     chooseInitialColor,
     playCards,
     drawCard,
-    keepDrawnCard,
   };
 }

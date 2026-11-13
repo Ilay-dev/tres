@@ -14,7 +14,6 @@ import {
   chooseInitialColor,
   drawCardAction,
   isCardPlayable,
-  keepDrawnCard,
   nextPlayerIndex,
   playCards,
   pushEvent,
@@ -178,9 +177,7 @@ export class BrowserHostManager {
       drawPileCount: game?.drawPile.length ?? 0,
       discardPileCount: game?.discardPile.length ?? 0,
       pendingInitialColorChoice: game?.pendingInitialColorChoice ?? false,
-      drawnDecisionPlayerId: game?.drawnDecisionPlayerId ?? null,
-      drawnPlayableCardId:
-        game && game.drawnDecisionPlayerId === playerId ? game.drawnPlayableCardId : null,
+      pendingDrawCount: game?.pendingDrawCount ?? 0,
       lastEvent: game?.eventLog[0] ?? null,
       eventLog: game?.eventLog ?? [],
       roundSummary: game?.roundSummary ?? null,
@@ -326,11 +323,6 @@ export class BrowserHostManager {
       return;
     }
 
-    if (game.drawnDecisionPlayerId === removed.id) {
-      game.drawnDecisionPlayerId = null;
-      game.drawnPlayableCardId = null;
-    }
-
     if (idx < game.currentPlayerIndex) {
       game.currentPlayerIndex -= 1;
     } else if (idx === game.currentPlayerIndex) {
@@ -445,8 +437,6 @@ export class BrowserHostManager {
       game.pendingInitialColorChoice = false;
       game.activeColor = 'red';
     }
-    game.drawnDecisionPlayerId = null;
-    game.drawnPlayableCardId = null;
     game.currentPlayerIndex = nextPlayerIndex(
       game.currentPlayerIndex,
       game.direction,
@@ -608,18 +598,6 @@ export class BrowserHostManager {
         }
         return res;
       }
-      case 'game:keep_drawn_card': {
-        const player = this.findPlayerByPeer(peerId);
-        if (!player || this.room.phase !== 'playing' || !this.room.game) {
-          return { ok: false, error: 'Keine aktive Runde.' };
-        }
-        const res = keepDrawnCard(this.room.game, this.room.players, player.id);
-        if (res.ok) {
-          this.broadcast();
-          this.scheduleBotTurnIfNeeded();
-        }
-        return res;
-      }
       default:
         return { ok: false, error: 'Unbekannte Aktion.' };
     }
@@ -674,28 +652,10 @@ export class BrowserHostManager {
       return;
     }
 
-    if (game.drawnDecisionPlayerId === bot.id && game.drawnPlayableCardId) {
-      const drawnCard = bot.hand.find((c) => c.id === game.drawnPlayableCardId);
-      if (drawnCard) {
-        const chosenColor =
-          drawnCard.color === 'wild' ? this.pickBestColorForBot(bot) : undefined;
-        const res = playCards(game, this.room.players, bot.id, [drawnCard.id], chosenColor, {
-          gameMode: this.room.gameMode,
-        });
-        if (res.roundEnded) {
-          this.finishRound();
-          return;
-        }
-      } else {
-        keepDrawnCard(game, this.room.players, bot.id);
-      }
-      this.broadcast();
-      this.scheduleBotTurnIfNeeded();
-      return;
-    }
-
     const topCard = game.discardPile[game.discardPile.length - 1];
-    const playable = bot.hand.filter((c) => isCardPlayable(c, topCard, game.activeColor));
+    const playable = bot.hand.filter((c) =>
+      isCardPlayable(c, topCard, game.activeColor, game.pendingDrawCount)
+    );
 
     if (playable.length > 0) {
       const nonWild4 = playable.filter((c) => c.value !== 'wild4');

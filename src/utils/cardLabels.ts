@@ -87,9 +87,16 @@ export function sortHand(hand: readonly UnoCard[]): UnoCard[] {
 export function isPlayableClient(
   card: UnoCard,
   topCard: UnoCard | null,
-  activeColor: CardColor | null
+  activeColor: CardColor | null,
+  pendingDrawCount = 0
 ): boolean {
   if (!topCard || !activeColor) return false;
+  if (pendingDrawCount > 0) {
+    if (topCard.value === 'wild4') {
+      return card.value === 'wild4';
+    }
+    return card.value === 'draw2' || card.value === 'wild4';
+  }
   if (card.color === 'wild') return true;
   if (card.color === activeColor) return true;
   if (card.value === topCard.value) return true;

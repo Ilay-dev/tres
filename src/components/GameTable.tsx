@@ -39,7 +39,6 @@ interface GameTableProps {
   onToggleSound: () => void;
   onPlayCards: (cardIds: string[], chosenColor?: CardColor) => Promise<RoomActionResponse>;
   onDrawCard: () => void;
-  onKeepDrawnCard: () => void;
   onChooseInitialColor: (color: CardColor) => void;
   onSkipDisconnected: (targetPlayerId: string) => void;
   onToggleReady: () => void;
@@ -71,7 +70,6 @@ export function GameTable({
   onToggleSound,
   onPlayCards,
   onDrawCard,
-  onKeepDrawnCard,
   onChooseInitialColor,
   onSkipDisconnected,
   onToggleReady,
@@ -107,8 +105,6 @@ export function GameTable({
 
   const isHost = room.hostId === room.myPlayerId;
   const isMyTurn = room.phase === 'playing' && room.currentPlayerId === room.myPlayerId;
-  const isDrawnDecision =
-    room.phase === 'playing' && room.drawnDecisionPlayerId === room.myPlayerId;
   const isInitialColorTurn =
     room.phase === 'playing' && room.pendingInitialColorChoice && isMyTurn;
 
@@ -143,22 +139,22 @@ export function GameTable({
   );
 
   const hasAnyPlayablePair = useMemo(() => {
-    if (!isMyTurn || isDrawnDecision || isInitialColorTurn) {
+    if (!isMyTurn || isInitialColorTurn) {
       return false;
     }
     return room.myHand.some(
       (card) =>
         card.color !== 'wild' &&
-        isPlayableClient(card, room.topCard, room.activeColor) &&
+        isPlayableClient(card, room.topCard, room.activeColor, room.pendingDrawCount) &&
         Boolean(findTwinCard(card, room.myHand))
     );
   }, [
     isMyTurn,
-    isDrawnDecision,
     isInitialColorTurn,
     room.myHand,
     room.topCard,
     room.activeColor,
+    room.pendingDrawCount,
   ]);
 
   // Subtle sound cues on state changes
@@ -191,9 +187,7 @@ export function GameTable({
     prevDiscardIdRef.current = room.topCard?.id ?? null;
   }, [room.topCard, onPlayCardSound]);
 
-  const canInteractNormally = isMyTurn && !isInitialColorTurn;
-
-  const canDraw = canInteractNormally && !isDrawnDecision;
+  const canDraw = isMyTurn && !isInitialColorTurn;
 
   const triggerReject = (cardId: string, reason: string) => {
     setRejectedCardId(cardId);
@@ -229,6 +223,10 @@ export function GameTable({
     // Jump-In mode out of turn
     if (!isMyTurn) {
       if (room.gameMode === 'jump_in') {
+        if (room.pendingDrawCount > 0) {
+          triggerReject(card.id, 'Bei aktivem Strafstapel kann nicht eingeworfen werden.');
+          return;
+        }
         if (!canJumpInClient(card, room.topCard, room.activeColor)) {
           triggerReject(
             card.id,
@@ -243,19 +241,14 @@ export function GameTable({
       return;
     }
 
-    // Drawn decision check
-    if (isDrawnDecision) {
-      if (card.id !== room.drawnPlayableCardId) {
-        triggerReject(card.id, 'Du darfst nur die gezogene Karte legen oder behalten.');
-        return;
-      }
-      await submitPlay([card.id], card);
-      return;
-    }
-
     // Normal turn playability check
-    if (!isPlayableClient(card, room.topCard, room.activeColor)) {
-      triggerReject(card.id, 'Diese Karte passt nicht auf die Ablagekarte.');
+    if (!isPlayableClient(card, room.topCard, room.activeColor, room.pendingDrawCount)) {
+      triggerReject(
+        card.id,
+        room.pendingDrawCount > 0
+          ? `Aktuell liegt +${room.pendingDrawCount} — lege eine passende Strafkarte oder ziehe.`
+          : 'Diese Karte passt nicht auf die Ablagekarte.'
+      );
       return;
     }
 
@@ -527,6 +520,15 @@ export function GameTable({
                 </>
               )}
             </span>
+
+            {room.pendingDrawCount > 0 && (
+              <>
+                <span className="text-zinc-700">•</span>
+                <span className="font-mono-code font-bold text-white">
+                  +{room.pendingDrawCount} aktiv
+                </span>
+              </>
+            )}
           </div>
 
           {rejectNotice ? (
@@ -547,6 +549,7 @@ export function GameTable({
           <CardBack
             count={room.drawPileCount}
             canDraw={canDraw}
+            pendingDrawCount={room.pendingDrawCount}
             onClick={handleDrawClick}
           />
         </div>
@@ -555,34 +558,6 @@ export function GameTable({
       {/* Bottom Controls + Semicircle Fan Hand */}
       <footer className="px-3 pb-4 pt-2 sm:px-6 md:pr-36 lg:pr-40 z-10">
         <div className="max-w-4xl mx-auto space-y-2.5">
-          {/* Drawn playable card action bar */}
-          {isDrawnDecision && room.drawnPlayableCardId && (
-            <div className="rounded-xl border border-white/30 bg-[#0C0C0F] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-              <span className="text-xs font-medium text-white">
-                Die gezogene Karte ist spielbar — direkt legen?
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const card = room.myHand.find((c) => c.id === room.drawnPlayableCardId);
-                    if (card) void handleCardClick(card);
-                  }}
-                  className="rounded-lg bg-white text-black px-3.5 py-1.5 text-xs font-semibold hover:bg-zinc-200 transition-colors cursor-pointer"
-                >
-                  Jetzt spielen
-                </button>
-                <button
-                  type="button"
-                  onClick={onKeepDrawnCard}
-                  className="rounded-lg border border-white/20 px-3.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:border-white/40 transition-colors cursor-pointer"
-                >
-                  Behalten
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Centered Turn Indicator & Controls Bar */}
           <div className="flex flex-col items-center gap-2.5 px-1">
             <div
@@ -655,15 +630,12 @@ export function GameTable({
 
               const twin =
                 isMyTurn &&
-                !isDrawnDecision &&
                 !isInitialColorTurn &&
-                isPlayableClient(card, room.topCard, room.activeColor)
+                isPlayableClient(card, room.topCard, room.activeColor, room.pendingDrawCount)
                   ? findTwinCard(card, room.myHand)
                   : undefined;
 
-              const isHighlighted =
-                card.id === room.drawnPlayableCardId ||
-                (pairMode && Boolean(twin));
+              const isHighlighted = pairMode && Boolean(twin);
 
               return (
                 <div

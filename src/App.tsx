@@ -31,7 +31,6 @@ export default function App() {
     chooseInitialColor,
     playCards,
     drawCard,
-    keepDrawnCard,
   } = useUnoSocket();
 
   const {
@@ -122,7 +121,6 @@ export default function App() {
           onToggleSound={toggleSound}
           onPlayCards={playCards}
           onDrawCard={drawCard}
-          onKeepDrawnCard={keepDrawnCard}
           onChooseInitialColor={chooseInitialColor}
           onSkipDisconnected={skipDisconnected}
           onToggleReady={toggleReady}
