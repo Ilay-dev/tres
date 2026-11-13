@@ -9,7 +9,7 @@ import type {
   ClientToServerEvents,
   ServerToClientEvents,
 } from '../shared/types.js';
-import { CARD_COLORS } from './gameEngine.js';
+import { CARD_COLORS } from '../shared/gameEngine.js';
 import { RoomManager, type Room } from './roomManager.js';
 
 const __filename = fileURLToPath(import.meta.url);

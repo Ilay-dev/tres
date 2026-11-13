@@ -16,8 +16,6 @@ export default function App() {
   const [initialRoomCode] = useState<string>(() => readRoomParam());
   const {
     connected,
-    serverConfig,
-    setCustomServerUrl,
     roomState,
     errorBanner,
     clearError,
@@ -57,7 +55,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [errorBanner, clearError]);
 
-  // Keep URL cleanly updated with ?room=CODE (preserving ?server=... if present)
+  // Keep URL cleanly updated with ?room=CODE
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (roomState?.roomCode) {
@@ -82,7 +80,6 @@ export default function App() {
     return (
       <HomeScreen
         connected={connected}
-        serverConfig={serverConfig}
         initialRoomCode={initialRoomCode}
         errorMessage={errorBanner}
         onCreateRoom={async (name) => {
@@ -91,7 +88,6 @@ export default function App() {
         onJoinRoom={async (code, name) => {
           await joinRoom(code, name);
         }}
-        onSetServerUrl={setCustomServerUrl}
         onClearError={clearError}
       />
     );
@@ -116,7 +112,6 @@ export default function App() {
         <LobbyScreen
           room={roomState}
           connected={connected}
-          serverConfig={serverConfig}
           onToggleReady={toggleReady}
           onSetGameMode={setGameMode}
           onAddBot={addBot}

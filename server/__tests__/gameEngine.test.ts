@@ -13,7 +13,7 @@ import {
   startRound,
   type InternalGameState,
   type InternalPlayer,
-} from '../gameEngine.js';
+} from '../../shared/gameEngine.js';
 
 function makePlayers(count: number): InternalPlayer[] {
   return Array.from({ length: count }, (_, i) => ({

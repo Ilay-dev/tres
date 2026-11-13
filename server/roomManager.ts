@@ -24,7 +24,7 @@ import {
   pushEvent,
   resolveWild4Challenge,
   startRound,
-} from './gameEngine.js';
+} from '../shared/gameEngine.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOT_NAMES = ['Nova (Bot)', 'Kairo (Bot)', 'Vega (Bot)', 'Echo (Bot)', 'Atlas (Bot)', 'Lyra (Bot)'];

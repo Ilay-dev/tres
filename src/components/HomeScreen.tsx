@@ -1,15 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowRight, Plus, Server, Wifi, WifiOff } from 'lucide-react';
-import type { ServerConfigState } from '../hooks/useSocket.ts';
+import { ArrowRight, Plus, Wifi, WifiOff } from 'lucide-react';
 
 interface HomeScreenProps {
   connected: boolean;
-  serverConfig: ServerConfigState;
   initialRoomCode: string;
   errorMessage: string | null;
   onCreateRoom: (playerName: string) => Promise<void>;
   onJoinRoom: (roomCode: string, playerName: string) => Promise<void>;
-  onSetServerUrl: (url: string) => boolean;
   onClearError: () => void;
 }
 
@@ -17,12 +14,10 @@ const NAME_STORAGE_KEY = 'uno_player_name';
 
 export function HomeScreen({
   connected,
-  serverConfig,
   initialRoomCode,
   errorMessage,
   onCreateRoom,
   onJoinRoom,
-  onSetServerUrl,
   onClearError,
 }: HomeScreenProps) {
   const [playerName, setPlayerName] = useState<string>(() => {
@@ -35,18 +30,6 @@ export function HomeScreen({
   const [roomCode, setRoomCode] = useState<string>(initialRoomCode);
   const [submitting, setSubmitting] = useState<'create' | 'join' | null>(null);
   const [showRules, setShowRules] = useState(false);
-  const [showServerInput, setShowServerInput] = useState(serverConfig.mode === 'missing');
-  const [serverDraft, setServerDraft] = useState(serverConfig.url ?? '');
-
-  useEffect(() => {
-    if (serverConfig.mode === 'missing') {
-      setShowServerInput(true);
-    }
-  }, [serverConfig.mode]);
-
-  useEffect(() => {
-    setServerDraft(serverConfig.url ?? '');
-  }, [serverConfig.url]);
 
   useEffect(() => {
     if (initialRoomCode) {
@@ -98,34 +81,17 @@ export function HomeScreen({
             }`}
           >
             {connected ? <Wifi className="w-3 h-3 text-white" /> : <WifiOff className="w-3 h-3" />}
-            <span>
-              {serverConfig.mode === 'missing'
-                ? 'Server-URL nötig'
-                : connected
-                  ? 'Online bereit'
-                  : 'Verbinde…'}
-            </span>
+            <span>{connected ? 'P2P Host-Modus bereit' : 'Verbinde…'}</span>
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setShowServerInput((v) => !v)}
-            className="inline-flex items-center gap-1 text-zinc-500 hover:text-white transition-colors cursor-pointer"
-          >
-            <Server className="w-3 h-3" />
-            <span>Server</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowRules((v) => !v)}
-            className="text-zinc-400 hover:text-white transition-colors cursor-pointer underline-offset-4 hover:underline"
-          >
-            {showRules ? 'Regeln ausblenden' : 'Standardregeln'}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowRules((v) => !v)}
+          className="text-zinc-400 hover:text-white transition-colors cursor-pointer underline-offset-4 hover:underline"
+        >
+          {showRules ? 'Regeln ausblenden' : 'Standardregeln'}
+        </button>
       </header>
 
       {/* Main content */}
@@ -142,7 +108,7 @@ export function HomeScreen({
             </div>
           </div>
           <p className="text-sm text-zinc-400 leading-relaxed">
-            Minimalistisches Online-UNO nach offiziellen Standardregeln. Erstelle einen Room oder tritt weltweit per Code bei.
+            Minimalistisches Online-UNO komplett ohne externen Server. Der Host erstellt den Room direkt im Browser — Freunde treten weltweit per Code bei.
           </p>
         </div>
 
@@ -159,46 +125,15 @@ export function HomeScreen({
           </div>
         )}
 
-        {showServerInput && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (onSetServerUrl(serverDraft)) {
-                if (serverDraft.trim()) setShowServerInput(false);
-              }
-            }}
-            className="mb-6 rounded-2xl border border-white/15 bg-[#09090B] p-4 space-y-2.5"
-          >
-            <div className="text-xs font-semibold text-white">UNO-Server verbinden</div>
-            <p className="text-[11px] text-zinc-400 leading-relaxed">
-              GitHub Pages hostet nur das statische Frontend. Trage hier die HTTPS-URL deines UNO-Servers ein (z. B. kostenlos über Render mit <code className="text-zinc-200">render.yaml</code>) oder setze <code className="text-zinc-200">VITE_WS_URL</code> in den GitHub-Repository-Variablen.
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={serverDraft}
-                onChange={(e) => setServerDraft(e.target.value)}
-                placeholder="https://mein-uno-server.onrender.com"
-                className="flex-1 rounded-xl border border-white/15 bg-black px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-white"
-              />
-              <button
-                type="submit"
-                className="rounded-xl bg-white text-black px-3.5 py-2 text-xs font-semibold hover:bg-zinc-200 transition-colors cursor-pointer shrink-0"
-              >
-                Speichern
-              </button>
-            </div>
-          </form>
-        )}
-
         {showRules && (
           <div className="mb-6 rounded-2xl border border-white/12 bg-[#0A0A0B] p-4 text-xs text-zinc-300 space-y-2 leading-relaxed">
             <div className="font-semibold text-white">Offizielle Standardregeln</div>
             <ul className="space-y-1 text-zinc-400 list-disc pl-4">
               <li>108 Karten, 7 Handkarten pro Spieler, kein Stapeln von +2 / +4.</li>
               <li>Bei 2 Spielern wirkt Richtungswechsel wie Aussetzen.</li>
-              <li>Gezogene Karte spielbar? Du darfst sie sofort legen oder behalten.</li>
-              <li>Farbwahl +4 darf legal ohne passende Farbe gelegt oder geblufft & angezweifelt werden.</li>
+              <li>2 identische Karten derselben Farbe &amp; Zahl können gleichzeitig gelegt werden.</li>
+              <li>Optional in der Lobby: Modus „Einwerfen“ (identische Karte jederzeit legen).</li>
+              <li>Farbwahl +4 darf legal ohne passende Farbe gelegt oder geblufft &amp; angezweifelt werden.</li>
               <li>Bei der vorletzten Karte „UNO!“ rufen — sonst drohen +2 Strafkarten beim Erwischt-Werden.</li>
             </ul>
           </div>
@@ -222,17 +157,16 @@ export function HomeScreen({
             />
           </div>
 
-          {/* Join section prioritized if invite link was used, otherwise Host first */}
           {!hasInviteCode ? (
             <>
               <button
                 type="button"
-                disabled={!connected || !hasName || submitting !== null}
+                disabled={!hasName || submitting !== null}
                 onClick={handleCreate}
                 className="w-full rounded-xl bg-white text-black font-semibold text-sm py-3.5 px-4 flex items-center justify-center gap-2 hover:bg-zinc-200 disabled:opacity-35 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>{submitting === 'create' ? 'Erstelle Room…' : 'Neuen Room erstellen (Host)'}</span>
+                <span>{submitting === 'create' ? 'Starte Host…' : 'Neuen Room erstellen (Host)'}</span>
               </button>
 
               <div className="relative flex items-center py-1">
@@ -257,7 +191,7 @@ export function HomeScreen({
                   />
                   <button
                     type="submit"
-                    disabled={!connected || !hasName || roomCode.trim().length < 4 || submitting !== null}
+                    disabled={!hasName || roomCode.trim().length < 4 || submitting !== null}
                     className="rounded-xl border border-white/20 bg-white/[0.06] text-white font-medium text-sm px-5 flex items-center gap-1.5 hover:bg-white hover:text-black disabled:opacity-35 disabled:cursor-not-allowed transition-all cursor-pointer"
                   >
                     <span>{submitting === 'join' ? '…' : 'Join'}</span>
@@ -287,17 +221,17 @@ export function HomeScreen({
 
                 <button
                   type="submit"
-                  disabled={!connected || !hasName || submitting !== null}
+                  disabled={!hasName || submitting !== null}
                   className="w-full rounded-xl bg-white text-black font-semibold text-sm py-3.5 px-4 flex items-center justify-center gap-2 hover:bg-zinc-200 disabled:opacity-35 disabled:cursor-not-allowed transition-all cursor-pointer"
                 >
-                  <span>{submitting === 'join' ? 'Trete bei…' : 'Room beitreten'}</span>
+                  <span>{submitting === 'join' ? 'Verbinde mit Host…' : 'Room beitreten'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </form>
 
               <button
                 type="button"
-                disabled={!connected || !hasName || submitting !== null}
+                disabled={!hasName || submitting !== null}
                 onClick={handleCreate}
                 className="w-full rounded-xl border border-white/15 bg-transparent text-zinc-300 font-medium text-sm py-3 px-4 flex items-center justify-center gap-2 hover:bg-white/[0.05] hover:text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
@@ -310,9 +244,8 @@ export function HomeScreen({
       </main>
 
       <footer className="max-w-xl w-full mx-auto text-center text-[11px] text-zinc-600">
-        HTTPS/WSS &amp; HTTP-Fallback • Funktioniert weltweit über jedes Netzwerk
+        Browser-to-Browser WebRTC (PeerJS) • Host = Server • Kein externer Spielserver nötig
       </footer>
     </div>
   );
 }
-

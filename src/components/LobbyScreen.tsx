@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { Bot, Check, Copy, Link2, LogOut, UserMinus, Users, Wifi, Zap } from 'lucide-react';
 import type { ClientRoomState, GameMode } from '../../shared/types.ts';
-import type { ServerConfigState } from '../hooks/useSocket.ts';
 
 interface LobbyScreenProps {
   room: ClientRoomState;
   connected: boolean;
-  serverConfig: ServerConfigState;
   onToggleReady: () => void;
   onSetGameMode: (mode: GameMode) => void;
   onAddBot: () => void;
@@ -17,7 +15,6 @@ interface LobbyScreenProps {
 export function LobbyScreen({
   room,
   connected,
-  serverConfig,
   onToggleReady,
   onSetGameMode,
   onAddBot,
@@ -46,9 +43,6 @@ export function LobbyScreen({
     const url = new URL(window.location.href);
     url.search = '';
     url.searchParams.set('room', room.roomCode);
-    if (serverConfig.mode === 'custom' && serverConfig.url) {
-      url.searchParams.set('server', serverConfig.url);
-    }
     return url.toString();
   })();
 
