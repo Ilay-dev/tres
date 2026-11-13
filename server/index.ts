@@ -22,6 +22,7 @@ const app = express();
 app.set('trust proxy', true);
 
 app.get('/api/health', (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.json({ ok: true, uptime: Math.round(process.uptime()) });
 });
 

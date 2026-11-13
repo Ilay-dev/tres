@@ -1,12 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowRight, Plus, Wifi, WifiOff } from 'lucide-react';
+import { ArrowRight, Plus, Server, Wifi, WifiOff } from 'lucide-react';
+import type { ServerConfigState } from '../hooks/useSocket.ts';
 
 interface HomeScreenProps {
   connected: boolean;
+  serverConfig: ServerConfigState;
   initialRoomCode: string;
   errorMessage: string | null;
   onCreateRoom: (playerName: string) => Promise<void>;
   onJoinRoom: (roomCode: string, playerName: string) => Promise<void>;
+  onSetServerUrl: (url: string) => boolean;
   onClearError: () => void;
 }
 
@@ -14,10 +17,12 @@ const NAME_STORAGE_KEY = 'uno_player_name';
 
 export function HomeScreen({
   connected,
+  serverConfig,
   initialRoomCode,
   errorMessage,
   onCreateRoom,
   onJoinRoom,
+  onSetServerUrl,
   onClearError,
 }: HomeScreenProps) {
   const [playerName, setPlayerName] = useState<string>(() => {
@@ -30,6 +35,18 @@ export function HomeScreen({
   const [roomCode, setRoomCode] = useState<string>(initialRoomCode);
   const [submitting, setSubmitting] = useState<'create' | 'join' | null>(null);
   const [showRules, setShowRules] = useState(false);
+  const [showServerInput, setShowServerInput] = useState(serverConfig.mode === 'missing');
+  const [serverDraft, setServerDraft] = useState(serverConfig.url ?? '');
+
+  useEffect(() => {
+    if (serverConfig.mode === 'missing') {
+      setShowServerInput(true);
+    }
+  }, [serverConfig.mode]);
+
+  useEffect(() => {
+    setServerDraft(serverConfig.url ?? '');
+  }, [serverConfig.url]);
 
   useEffect(() => {
     if (initialRoomCode) {
@@ -81,17 +98,34 @@ export function HomeScreen({
             }`}
           >
             {connected ? <Wifi className="w-3 h-3 text-white" /> : <WifiOff className="w-3 h-3" />}
-            <span>{connected ? 'Online bereit' : 'Verbinde…'}</span>
+            <span>
+              {serverConfig.mode === 'missing'
+                ? 'Server-URL nötig'
+                : connected
+                  ? 'Online bereit'
+                  : 'Verbinde…'}
+            </span>
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowRules((v) => !v)}
-          className="text-zinc-400 hover:text-white transition-colors cursor-pointer underline-offset-4 hover:underline"
-        >
-          {showRules ? 'Regeln ausblenden' : 'Standardregeln'}
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setShowServerInput((v) => !v)}
+            className="inline-flex items-center gap-1 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+          >
+            <Server className="w-3 h-3" />
+            <span>Server</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowRules((v) => !v)}
+            className="text-zinc-400 hover:text-white transition-colors cursor-pointer underline-offset-4 hover:underline"
+          >
+            {showRules ? 'Regeln ausblenden' : 'Standardregeln'}
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
@@ -123,6 +157,38 @@ export function HomeScreen({
               OK
             </button>
           </div>
+        )}
+
+        {showServerInput && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (onSetServerUrl(serverDraft)) {
+                if (serverDraft.trim()) setShowServerInput(false);
+              }
+            }}
+            className="mb-6 rounded-2xl border border-white/15 bg-[#09090B] p-4 space-y-2.5"
+          >
+            <div className="text-xs font-semibold text-white">UNO-Server verbinden</div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              GitHub Pages hostet nur das statische Frontend. Trage hier die HTTPS-URL deines UNO-Servers ein (z. B. kostenlos über Render mit <code className="text-zinc-200">render.yaml</code>) oder setze <code className="text-zinc-200">VITE_WS_URL</code> in den GitHub-Repository-Variablen.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={serverDraft}
+                onChange={(e) => setServerDraft(e.target.value)}
+                placeholder="https://mein-uno-server.onrender.com"
+                className="flex-1 rounded-xl border border-white/15 bg-black px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-white"
+              />
+              <button
+                type="submit"
+                className="rounded-xl bg-white text-black px-3.5 py-2 text-xs font-semibold hover:bg-zinc-200 transition-colors cursor-pointer shrink-0"
+              >
+                Speichern
+              </button>
+            </div>
+          </form>
         )}
 
         {showRules && (

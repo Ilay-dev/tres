@@ -11,8 +11,73 @@ import type {
 } from '../../shared/types.ts';
 
 const SESSION_KEY = 'uno_online_session';
+const SERVER_URL_KEY = 'uno_server_url';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+
+export interface ServerConfigState {
+  mode: 'same-origin' | 'env' | 'custom' | 'missing';
+  url: string | null;
+}
+
+export function normalizeServerUrl(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) return null;
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(withProtocol);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.origin + parsed.pathname.replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function resolveInitialServerConfig(): ServerConfigState {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const paramServer = params.get('server');
+    if (paramServer) {
+      const normalized = normalizeServerUrl(paramServer);
+      if (normalized) {
+        try {
+          localStorage.setItem(SERVER_URL_KEY, normalized);
+        } catch {
+          // ignore storage errors
+        }
+        return { mode: 'custom', url: normalized };
+      }
+    }
+  }
+
+  const envUrl = import.meta.env.VITE_WS_URL?.trim();
+  if (envUrl) {
+    const normalized = normalizeServerUrl(envUrl);
+    if (normalized) {
+      return { mode: 'env', url: normalized };
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(SERVER_URL_KEY);
+      if (saved) {
+        const normalized = normalizeServerUrl(saved);
+        if (normalized) {
+          return { mode: 'custom', url: normalized };
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    if (window.location.hostname.endsWith('github.io')) {
+      return { mode: 'missing', url: null };
+    }
+  }
+
+  return { mode: 'same-origin', url: null };
+}
 
 function saveSession(creds: SessionCredentials | null): void {
   try {
@@ -42,6 +107,9 @@ function loadSession(): SessionCredentials | null {
 
 export function useUnoSocket() {
   const socketRef = useRef<TypedSocket | null>(null);
+  const [serverConfig, setServerConfig] = useState<ServerConfigState>(() =>
+    resolveInitialServerConfig()
+  );
   const [connected, setConnected] = useState(false);
   const [transport, setTransport] = useState<string>('connecting');
   const [roomState, setRoomState] = useState<ClientRoomState | null>(null);
@@ -55,9 +123,46 @@ export function useUnoSocket() {
     setErrorBanner(null);
   }, []);
 
+  const setCustomServerUrl = useCallback((rawUrl: string): boolean => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      try {
+        localStorage.removeItem(SERVER_URL_KEY);
+      } catch {
+        // ignore
+      }
+      saveSession(null);
+      setRoomState(null);
+      setServerConfig(resolveInitialServerConfig());
+      return true;
+    }
+
+    const normalized = normalizeServerUrl(trimmed);
+    if (!normalized) {
+      setErrorBanner('Bitte eine gültige Server-URL eingeben (z. B. https://mein-uno.onrender.com).');
+      return false;
+    }
+    try {
+      localStorage.setItem(SERVER_URL_KEY, normalized);
+    } catch {
+      // ignore
+    }
+    saveSession(null);
+    setRoomState(null);
+    setErrorBanner(null);
+    setServerConfig({ mode: 'custom', url: normalized });
+    return true;
+  }, []);
+
   useEffect(() => {
-    const serverUrl = import.meta.env.VITE_WS_URL?.trim() || undefined;
-    const socket: TypedSocket = io(serverUrl, {
+    if (serverConfig.mode === 'missing') {
+      setConnected(false);
+      setTransport('unconfigured');
+      return;
+    }
+
+    const socketTarget = serverConfig.url ?? undefined;
+    const socket: TypedSocket = io(socketTarget, {
       transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -112,7 +217,7 @@ export function useUnoSocket() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [serverConfig.mode, serverConfig.url]);
 
   const createRoom = useCallback((playerName: string): Promise<RoomActionResponse> => {
     return new Promise((resolve) => {
@@ -269,6 +374,8 @@ export function useUnoSocket() {
   return {
     connected,
     transport,
+    serverConfig,
+    setCustomServerUrl,
     roomState,
     errorBanner,
     showError,
