@@ -39,6 +39,7 @@ interface GameTableProps {
   onToggleSound: () => void;
   onPlayCards: (cardIds: string[], chosenColor?: CardColor) => Promise<RoomActionResponse>;
   onDrawCard: () => void;
+  onPassTurn: () => void;
   onChooseInitialColor: (color: CardColor) => void;
   onSkipDisconnected: (targetPlayerId: string) => void;
   onToggleReady: () => void;
@@ -70,6 +71,7 @@ export function GameTable({
   onToggleSound,
   onPlayCards,
   onDrawCard,
+  onPassTurn,
   onChooseInitialColor,
   onSkipDisconnected,
   onToggleReady,
@@ -187,7 +189,9 @@ export function GameTable({
     prevDiscardIdRef.current = room.topCard?.id ?? null;
   }, [room.topCard, onPlayCardSound]);
 
-  const canDraw = isMyTurn && !isInitialColorTurn;
+  const canDraw =
+    isMyTurn && !isInitialColorTurn && (!room.hasDrawnThisTurn || room.pendingDrawCount > 0);
+  const canPassTurn = isMyTurn && !isInitialColorTurn && room.hasDrawnThisTurn && room.pendingDrawCount === 0;
 
   const triggerReject = (cardId: string, reason: string) => {
     setRejectedCardId(cardId);
@@ -556,7 +560,7 @@ export function GameTable({
       </main>
 
       {/* Bottom Controls + Semicircle Fan Hand */}
-      <footer className="px-3 pb-4 pt-2 sm:px-6 md:pr-36 lg:pr-40 z-10">
+      <footer className="px-3 pb-4 pt-2 sm:px-6 md:px-36 lg:px-40 z-10">
         <div className="max-w-4xl mx-auto space-y-2.5">
           {/* Centered Turn Indicator & Controls Bar */}
           <div className="flex flex-col items-center gap-2.5 px-1">
@@ -585,6 +589,16 @@ export function GameTable({
               </span>
 
               <div className="flex items-center gap-2">
+                {canPassTurn && (
+                  <button
+                    type="button"
+                    onClick={onPassTurn}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white text-black px-3 py-1.5 text-xs font-semibold hover:bg-zinc-200 transition-colors cursor-pointer"
+                  >
+                    <span>Zug beenden</span>
+                  </button>
+                )}
+
                 {hasAnyPlayablePair && (
                   <button
                     type="button"

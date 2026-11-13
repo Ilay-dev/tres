@@ -153,6 +153,11 @@ io.on('connection', (socket) => {
     ack?.(res);
   });
 
+  socket.on('game:pass_turn', (ack) => {
+    const res = manager.handlePassTurn(socket.id);
+    ack?.(res);
+  });
+
   socket.on('disconnect', () => {
     manager.handleDisconnect(socket.id);
   });

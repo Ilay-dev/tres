@@ -16,6 +16,7 @@ import {
   drawCardAction,
   isCardPlayable,
   nextPlayerIndex,
+  passTurnAction,
   playCards,
   pushEvent,
   startRound,
@@ -203,6 +204,7 @@ export class RoomManager {
       discardPileCount: game?.discardPile.length ?? 0,
       pendingInitialColorChoice: game?.pendingInitialColorChoice ?? false,
       pendingDrawCount: game?.pendingDrawCount ?? 0,
+      hasDrawnThisTurn: game?.hasDrawnThisTurn ?? false,
       lastEvent: game?.eventLog[0] ?? null,
       eventLog: game?.eventLog ?? [],
       roundSummary: game?.roundSummary ?? null,
@@ -582,6 +584,7 @@ export class RoomManager {
       game.pendingInitialColorChoice = false;
       game.activeColor = 'red';
     }
+    game.hasDrawnThisTurn = false;
     game.currentPlayerIndex = nextPlayerIndex(
       game.currentPlayerIndex,
       game.direction,
@@ -733,6 +736,22 @@ export class RoomManager {
     return res;
   }
 
+  public handlePassTurn(socketId: string): RoomActionResponse {
+    const session = this.getSession(socketId);
+    if (!session) return { ok: false, error: 'Nicht in einem Room.' };
+    const { room, player } = session;
+    if (room.phase !== 'playing' || !room.game) {
+      return { ok: false, error: 'Keine aktive Runde.' };
+    }
+    const res = passTurnAction(room.game, room.players, player.id);
+    if (!res.ok) return res;
+
+    room.lastActivityAt = Date.now();
+    this.onBroadcast(room);
+    this.scheduleBotTurnIfNeeded(room);
+    return res;
+  }
+
   private finishRound(room: Room): void {
     this.clearBotTimer(room);
     room.phase = 'round_over';
@@ -823,8 +842,12 @@ export class RoomManager {
       return;
     }
 
-    // 5. Draw card
-    drawCardAction(game, room.players, bot.id);
+    // 5. Draw card or pass if already drawn
+    if (game.hasDrawnThisTurn && game.pendingDrawCount === 0) {
+      passTurnAction(game, room.players, bot.id);
+    } else {
+      drawCardAction(game, room.players, bot.id);
+    }
     this.onBroadcast(room);
     this.scheduleBotTurnIfNeeded(room);
   }

@@ -130,7 +130,7 @@ export function HomeScreen({
             <div className="font-semibold text-white">Offizielle Standardregeln</div>
             <ul className="space-y-1 text-zinc-400 list-disc pl-4">
               <li>108 Karten, 7 Handkarten pro Spieler.</li>
-              <li>+2 und +4 können gestapelt werden (+2 auf +2, +4 auf +2/+4).</li>
+              <li>+2 und +4 können gestapelt werden (+2 auf +2, +4 auf +4).</li>
               <li>Wer Strafkarten (+2/+4) zieht, bleibt danach trotzdem am Zug.</li>
               <li>Bei 2 Spielern wirkt Richtungswechsel wie Aussetzen.</li>
               <li>2 identische Karten derselben Farbe &amp; Zahl können gleichzeitig gelegt werden.</li>

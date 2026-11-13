@@ -526,6 +526,10 @@ export function useUnoSocket() {
     void dispatchAction('game:draw_card');
   }, [dispatchAction]);
 
+  const passTurn = useCallback(() => {
+    void dispatchAction('game:pass_turn');
+  }, [dispatchAction]);
+
   return {
     connected,
     roomState,
@@ -544,5 +548,6 @@ export function useUnoSocket() {
     chooseInitialColor,
     playCards,
     drawCard,
+    passTurn,
   };
 }

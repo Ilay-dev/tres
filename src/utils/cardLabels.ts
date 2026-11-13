@@ -95,7 +95,10 @@ export function isPlayableClient(
     if (topCard.value === 'wild4') {
       return card.value === 'wild4';
     }
-    return card.value === 'draw2' || card.value === 'wild4';
+    if (topCard.value === 'draw2') {
+      return card.value === 'draw2';
+    }
+    return false;
   }
   if (card.color === 'wild') return true;
   if (card.color === activeColor) return true;

@@ -15,6 +15,7 @@ import {
   drawCardAction,
   isCardPlayable,
   nextPlayerIndex,
+  passTurnAction,
   playCards,
   pushEvent,
   secureRandomInt,
@@ -178,6 +179,7 @@ export class BrowserHostManager {
       discardPileCount: game?.discardPile.length ?? 0,
       pendingInitialColorChoice: game?.pendingInitialColorChoice ?? false,
       pendingDrawCount: game?.pendingDrawCount ?? 0,
+      hasDrawnThisTurn: game?.hasDrawnThisTurn ?? false,
       lastEvent: game?.eventLog[0] ?? null,
       eventLog: game?.eventLog ?? [],
       roundSummary: game?.roundSummary ?? null,
@@ -437,6 +439,7 @@ export class BrowserHostManager {
       game.pendingInitialColorChoice = false;
       game.activeColor = 'red';
     }
+    game.hasDrawnThisTurn = false;
     game.currentPlayerIndex = nextPlayerIndex(
       game.currentPlayerIndex,
       game.direction,
@@ -598,6 +601,18 @@ export class BrowserHostManager {
         }
         return res;
       }
+      case 'game:pass_turn': {
+        const player = this.findPlayerByPeer(peerId);
+        if (!player || this.room.phase !== 'playing' || !this.room.game) {
+          return { ok: false, error: 'Keine aktive Runde.' };
+        }
+        const res = passTurnAction(this.room.game, this.room.players, player.id);
+        if (res.ok) {
+          this.broadcast();
+          this.scheduleBotTurnIfNeeded();
+        }
+        return res;
+      }
       default:
         return { ok: false, error: 'Unbekannte Aktion.' };
     }
@@ -686,7 +701,11 @@ export class BrowserHostManager {
       return;
     }
 
-    drawCardAction(game, this.room.players, bot.id);
+    if (game.hasDrawnThisTurn && game.pendingDrawCount === 0) {
+      passTurnAction(game, this.room.players, bot.id);
+    } else {
+      drawCardAction(game, this.room.players, bot.id);
+    }
     this.broadcast();
     this.scheduleBotTurnIfNeeded();
   }
