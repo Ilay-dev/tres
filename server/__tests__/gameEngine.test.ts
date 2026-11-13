@@ -168,11 +168,12 @@ describe('Official Standard UNO Rules Engine', () => {
       { id: 'r-1', color: 'red', value: '1' },
       [
         { id: 'y-5', color: 'yellow', value: '5' },
+        { id: 'r-2', color: 'red', value: '2' },
         { id: 'r-7', color: 'red', value: '7' },
       ]
     );
 
-    // Draw 1 card: goes straight to hand, player keeps turn
+    // Draw 1 card (r-7, playable): goes straight to hand, player keeps turn
     const drawRes = drawCardAction(game, players, 'p1');
     expect(drawRes.ok).toBe(true);
     expect(players[0].hand).toHaveLength(2);
@@ -190,12 +191,18 @@ describe('Official Standard UNO Rules Engine', () => {
     expect(game.hasDrawnThisTurn).toBe(false);
     expect(game.currentPlayerIndex).toBe(1);
 
-    // Next turn: p2 draws a card and passes turn
+    // p2 draws a playable card (r-2) and chooses to pass turn
     expect(drawCardAction(game, players, 'p2').ok).toBe(true);
+    expect(game.hasDrawnThisTurn).toBe(true);
     expect(game.currentPlayerIndex).toBe(1);
     expect(passTurnAction(game, players, 'p2').ok).toBe(true);
     expect(game.hasDrawnThisTurn).toBe(false);
     expect(game.currentPlayerIndex).toBe(0);
+
+    // p1 draws an unplayable card (y-5 on r-7 while holding b-9) -> turn ends automatically!
+    expect(drawCardAction(game, players, 'p1').ok).toBe(true);
+    expect(game.hasDrawnThisTurn).toBe(false);
+    expect(game.currentPlayerIndex).toBe(1);
   });
 
   it('stacks +2 only on +2 and +4 only on +4', () => {

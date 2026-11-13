@@ -665,15 +665,35 @@ export function drawCardAction(
     return { ok: false, error: 'Du bist nicht am Zug.' };
   }
 
+  const topCard = game.discardPile[game.discardPile.length - 1];
+
   if (game.pendingDrawCount > 0) {
     const penalty = game.pendingDrawCount;
     const drawn = giveCardsToPlayer(game, currentPlayer, penalty);
     game.pendingDrawCount = 0;
-    game.hasDrawnThisTurn = true;
-    pushEvent(
-      game,
-      `${currentPlayer.name} zieht ${drawn.length} Strafkarten und ist noch am Zug.`
+
+    const canPlayAny = currentPlayer.hand.some((c) =>
+      isCardPlayable(c, topCard, game.activeColor, 0)
     );
+    if (canPlayAny) {
+      game.hasDrawnThisTurn = true;
+      pushEvent(
+        game,
+        `${currentPlayer.name} zieht ${drawn.length} Strafkarten und ist noch am Zug.`
+      );
+    } else {
+      game.hasDrawnThisTurn = false;
+      game.currentPlayerIndex = nextPlayerIndex(
+        game.currentPlayerIndex,
+        game.direction,
+        players.length,
+        1
+      );
+      pushEvent(
+        game,
+        `${currentPlayer.name} zieht ${drawn.length} Strafkarten (keine spielbare Karte).`
+      );
+    }
     return { ok: true };
   }
 
@@ -682,11 +702,32 @@ export function drawCardAction(
   }
 
   const drawn = giveCardsToPlayer(game, currentPlayer, 1);
-  game.hasDrawnThisTurn = true;
-  if (drawn.length === 0) {
-    pushEvent(game, `Nachziehstapel leer — ${currentPlayer.name} kann ablegen oder Zug beenden.`);
+  const canPlayAny = currentPlayer.hand.some((c) =>
+    isCardPlayable(c, topCard, game.activeColor, 0)
+  );
+
+  if (canPlayAny) {
+    game.hasDrawnThisTurn = true;
+    pushEvent(
+      game,
+      drawn.length === 0
+        ? `Nachziehstapel leer — ${currentPlayer.name} kann ablegen oder Zug beenden.`
+        : `${currentPlayer.name} zieht 1 Karte.`
+    );
   } else {
-    pushEvent(game, `${currentPlayer.name} zieht 1 Karte.`);
+    game.hasDrawnThisTurn = false;
+    game.currentPlayerIndex = nextPlayerIndex(
+      game.currentPlayerIndex,
+      game.direction,
+      players.length,
+      1
+    );
+    pushEvent(
+      game,
+      drawn.length === 0
+        ? `Nachziehstapel leer — ${currentPlayer.name} gibt ab.`
+        : `${currentPlayer.name} zieht 1 Karte (keine spielbare Karte).`
+    );
   }
 
   return { ok: true };
